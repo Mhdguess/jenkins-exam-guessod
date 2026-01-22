@@ -1,0 +1,30 @@
+global:
+  namespace: default
+
+movie-service:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: guessod/movie-service-exam
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 8000
+    targetPort: 8000
+  ingress:
+    enabled: false
+
+cast-service:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: guessod/cast-service-exam
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 8000
+    targetPort: 8000
+  ingress:
+    enabled: false
