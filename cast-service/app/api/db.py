@@ -1,11 +1,12 @@
 import os
 
-from sqlalchemy import (Column, Integer, MetaData, String, Table,
+from sqlalchemy import (Column, DateTime, Integer, MetaData, String, Table,
                         create_engine, ARRAY)
 
 from databases import Database
 
-DATABASE_URI = os.getenv('DATABASE_URI')
+# Utiliser une valeur par défaut si DATABASE_URI n'est pas définie
+DATABASE_URI = os.getenv('DATABASE_URI', 'sqlite:///:memory:')
 
 engine = create_engine(DATABASE_URI)
 metadata = MetaData()
