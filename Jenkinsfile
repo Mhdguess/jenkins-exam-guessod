@@ -524,7 +524,8 @@ YAML
             echo "FIN DU PIPELINE - RAPPORT FINAL"
             echo "========================================"
             script {
-                sh '''
+                // Utiliser des guillemets doubles correctement échappés
+                sh """
                 echo "📋 INFORMATIONS:"
                 echo "   Candidat: Mohamed GUESSOD"
                 echo "   Build: ${BUILD_ID}"
@@ -532,7 +533,9 @@ YAML
                 echo "   Environnement: ${params.DEPLOY_ENV}"
                 echo "   Push DockerHub: ${params.SKIP_DOCKER_PUSH ? 'Non' : 'Oui'}"
                 echo ""
+                """
                 
+                sh '''
                 echo "🏗️ ÉTAT KUBERNETES:"
                 for ns in dev qa staging prod; do
                     echo "   --- $ns ---"
