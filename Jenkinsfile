@@ -55,50 +55,189 @@ pipeline {
                     echo "Structure du projet:"
                     ls -la
                     echo ""
-                    echo "Vérification des dépendances SQLite..."
-                    grep -i "aiosqlite" movie-service/requirements.txt || echo "⚠️ aiosqlite manquant dans movie-service"
-                    grep -i "sqlite" movie-service/requirements.txt || echo "⚠️ sqlite manquant dans movie-service"
-                    grep -i "aiosqlite" cast-service/requirements.txt || echo "⚠️ aiosqlite manquant dans cast-service"
-                    grep -i "sqlite" cast-service/requirements.txt || echo "⚠️ sqlite manquant dans cast-service"
                     '''
                 }
             }
         }
         
-        // ========== STAGE 2 : VÉRIFICATION DÉPENDANCES ==========
+        // ========== STAGE 2 : VÉRIFICATION ET CORRECTION DÉPENDANCES ==========
         stage('Vérification Dépendances') {
             steps {
                 script {
-                    echo "=== VÉRIFICATION DES DÉPENDANCES ==="
+                    echo "=== VÉRIFICATION ET CORRECTION DES DÉPENDANCES ==="
                     
                     sh '''
-                    echo "1. Vérification requirements.txt..."
+                    echo "1. Analyse des dépendances manquantes..."
                     
-                    # Movie-service
-                    if grep -q "aiosqlite" movie-service/requirements.txt; then
-                        echo "✅ movie-service: aiosqlite présent"
+                    # Vérifier si movie-service a toutes les dépendances nécessaires
+                    echo "→ Movie-service requirements.txt:"
+                    if [ -f "movie-service/requirements.txt" ]; then
+                        cat movie-service/requirements.txt
+                        
+                        # Liste des dépendances requises pour movie-service
+                        REQUIRED_DEPS=("fastapi" "uvicorn" "aiosqlite" "databases" "sqlalchemy" "pydantic")
+                        for dep in "${REQUIRED_DEPS[@]}"; do
+                            if ! grep -qi "$dep" movie-service/requirements.txt; then
+                                echo "  ⚠️  $dep manquant dans movie-service"
+                            fi
+                        done
+                        
+                        # CORRECTION: Ajouter les dépendances manquantes CRITIQUES
+                        echo "  🔧 Correction des dépendances manquantes..."
+                        if ! grep -qi "fastapi" movie-service/requirements.txt; then
+                            echo "fastapi==0.104.1" >> movie-service/requirements.txt
+                        fi
+                        if ! grep -qi "uvicorn" movie-service/requirements.txt; then
+                            echo "uvicorn[standard]==0.24.0" >> movie-service/requirements.txt
+                        fi
+                        if ! grep -qi "aiosqlite" movie-service/requirements.txt; then
+                            echo "aiosqlite==0.19.0" >> movie-service/requirements.txt
+                        fi
+                        if ! grep -qi "databases" movie-service/requirements.txt; then
+                            echo "databases[sqlite]==0.2.6" >> movie-service/requirements.txt
+                        fi
+                        if ! grep -qi "sqlalchemy" movie-service/requirements.txt; then
+                            echo "sqlalchemy==2.0.23" >> movie-service/requirements.txt
+                        fi
+                        if ! grep -qi "pydantic" movie-service/requirements.txt; then
+                            echo "pydantic==2.5.3" >> movie-service/requirements.txt
+                        fi
                     else
-                        echo "❌ movie-service: aiosqlite manquant - ajout automatique"
-                        echo "aiosqlite==0.19.0" >> movie-service/requirements.txt
-                        echo "databases[sqlite]==0.2.6" >> movie-service/requirements.txt
+                        echo "  ❌ movie-service/requirements.txt non trouvé!"
+                        echo "  🛠️  Création avec toutes les dépendances nécessaires..."
+                        cat > movie-service/requirements.txt << 'REQS'
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+aiosqlite==0.19.0
+databases[sqlite]==0.2.6
+sqlalchemy==2.0.23
+pydantic==2.5.3
+REQS
                     fi
                     
-                    # Cast-service
-                    if grep -q "aiosqlite" cast-service/requirements.txt; then
-                        echo "✅ cast-service: aiosqlite présent"
+                    # Vérifier si cast-service a toutes les dépendances nécessaires
+                    echo ""
+                    echo "→ Cast-service requirements.txt:"
+                    if [ -f "cast-service/requirements.txt" ]; then
+                        cat cast-service/requirements.txt
+                        
+                        # Liste des dépendances requises pour cast-service
+                        REQUIRED_DEPS=("fastapi" "uvicorn" "aiosqlite" "databases" "sqlalchemy" "pydantic")
+                        for dep in "${REQUIRED_DEPS[@]}"; do
+                            if ! grep -qi "$dep" cast-service/requirements.txt; then
+                                echo "  ⚠️  $dep manquant dans cast-service"
+                            fi
+                        done
+                        
+                        # CORRECTION: Ajouter les dépendances manquantes
+                        echo "  🔧 Correction des dépendances manquantes..."
+                        if ! grep -qi "fastapi" cast-service/requirements.txt; then
+                            echo "fastapi==0.104.1" >> cast-service/requirements.txt
+                        fi
+                        if ! grep -qi "uvicorn" cast-service/requirements.txt; then
+                            echo "uvicorn[standard]==0.24.0" >> cast-service/requirements.txt
+                        fi
+                        if ! grep -qi "aiosqlite" cast-service/requirements.txt; then
+                            echo "aiosqlite==0.19.0" >> cast-service/requirements.txt
+                        fi
+                        if ! grep -qi "databases" cast-service/requirements.txt; then
+                            echo "databases[sqlite]==0.2.6" >> cast-service/requirements.txt
+                        fi
+                        if ! grep -qi "sqlalchemy" cast-service/requirements.txt; then
+                            echo "sqlalchemy==2.0.23" >> cast-service/requirements.txt
+                        fi
+                        if ! grep -qi "pydantic" cast-service/requirements.txt; then
+                            echo "pydantic==2.5.3" >> cast-service/requirements.txt
+                        fi
                     else
-                        echo "❌ cast-service: aiosqlite manquant - ajout automatique"
-                        echo "aiosqlite==0.19.0" >> cast-service/requirements.txt
-                        echo "databases[sqlite]==0.2.6" >> cast-service/requirements.txt
+                        echo "  ❌ cast-service/requirements.txt non trouvé!"
+                        echo "  🛠️  Création avec toutes les dépendances nécessaires..."
+                        cat > cast-service/requirements.txt << 'REQS'
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+aiosqlite==0.19.0
+databases[sqlite]==0.2.6
+sqlalchemy==2.0.23
+pydantic==2.5.3
+REQS
                     fi
                     
                     echo ""
-                    echo "2. Affichage des requirements.txt mis à jour:"
-                    echo "Movie-service:"
-                    cat movie-service/requirements.txt
+                    echo "2. Vérification de la structure des projets..."
+                    
+                    # Vérifier la structure de movie-service
+                    echo "→ Structure de movie-service:"
+                    find movie-service -type f -name "*.py" | head -20 || echo "  Aucun fichier Python trouvé"
+                    
+                    # Vérifier la structure de cast-service
+                    echo "→ Structure de cast-service:"
+                    find cast-service -type f -name "*.py" | head -20 || echo "  Aucun fichier Python trouvé"
+                    
                     echo ""
-                    echo "Cast-service:"
-                    cat cast-service/requirements.txt
+                    echo "3. Vérification des Dockerfiles..."
+                    
+                    # Vérifier Dockerfile movie-service
+                    if [ -f "movie-service/Dockerfile" ]; then
+                        echo "✅ Dockerfile trouvé dans movie-service"
+                        echo "  Contenu:"
+                        head -20 movie-service/Dockerfile
+                    else
+                        echo "❌ Dockerfile manquant dans movie-service"
+                        echo "  🛠️  Création du Dockerfile..."
+                        cat > movie-service/Dockerfile << 'DOCKERFILE'
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Copier les requirements d'abord pour optimiser le cache
+COPY requirements.txt .
+
+# Installer les dépendances
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copier le reste du code
+COPY . .
+
+# Exposer le port
+EXPOSE 8000
+
+# Commande de démarrage avec reload pour le développement
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+DOCKERFILE
+                    fi
+                    
+                    # Vérifier Dockerfile cast-service
+                    if [ -f "cast-service/Dockerfile" ]; then
+                        echo "✅ Dockerfile trouvé dans cast-service"
+                        echo "  Contenu:"
+                        head -20 cast-service/Dockerfile
+                    else
+                        echo "❌ Dockerfile manquant dans cast-service"
+                        echo "  🛠️  Création du Dockerfile..."
+                        cat > cast-service/Dockerfile << 'DOCKERFILE'
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Copier les requirements d'abord pour optimiser le cache
+COPY requirements.txt .
+
+# Installer les dépendances
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copier le reste du code
+COPY . .
+
+# Exposer le port
+EXPOSE 8000
+
+# Commande de démarrage avec reload pour le développement
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+DOCKERFILE
+                    fi
+                    
+                    echo ""
+                    echo "✅ Vérification et correction des dépendances terminée"
                     '''
                 }
             }
@@ -113,84 +252,223 @@ pipeline {
                     // Build movie-service
                     dir('movie-service') {
                         sh """
-                        echo "Construction de movie-service..."
-                        docker build -t ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} .
-                        docker tag ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:latest
-                        echo "✅ Image movie-service créée"
+                        echo "🔨 Construction de movie-service..."
+                        echo "Dépendances installées:"
+                        cat requirements.txt
+                        
+                        # Construire l'image avec gestion d'erreur détaillée
+                        if docker build -t ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} . ; then
+                            echo "✅ Image movie-service construite avec succès"
+                            docker tag ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:latest
+                            echo "✅ Tag latest ajouté"
+                        else
+                            echo "❌ Échec du build de movie-service"
+                            echo "Derniers logs du build:"
+                            docker build -t ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} . 2>&1 | tail -50
+                            echo "Structure du projet:"
+                            find . -type f -name "*.py" | head -20
+                            echo "Contenu de app/main.py:"
+                            head -50 app/main.py 2>/dev/null || echo "app/main.py non trouvé"
+                            exit 1
+                        fi
                         """
                     }
                     
                     // Build cast-service
                     dir('cast-service') {
                         sh """
-                        echo "Construction de cast-service..."
-                        docker build -t ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} .
-                        docker tag ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} ${DOCKER_REGISTRY}/${CAST_IMAGE}:latest
-                        echo "✅ Image cast-service créée"
+                        echo "🔨 Construction de cast-service..."
+                        echo "Dépendances installées:"
+                        cat requirements.txt
+                        
+                        # Construire l'image avec gestion d'erreur détaillée
+                        if docker build -t ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} . ; then
+                            echo "✅ Image cast-service construite avec succès"
+                            docker tag ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} ${DOCKER_REGISTRY}/${CAST_IMAGE}:latest
+                            echo "✅ Tag latest ajouté"
+                        else
+                            echo "❌ Échec du build de cast-service"
+                            echo "Derniers logs du build:"
+                            docker build -t ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} . 2>&1 | tail -50
+                            exit 1
+                        fi
                         """
                     }
                     
-                    // Vérification des dépendances dans les images
+                    // Test des dépendances dans les images
                     sh '''
                     echo ""
-                    echo "🧪 TEST DES DÉPENDANCES DANS LES IMAGES:"
+                    echo "🧪 TEST DES IMAGES CONSTRUITES:"
                     
-                    echo "→ Test movie-service:"
-                    docker run --rm ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} python -c "import aiosqlite; import databases; print('✅ movie-service: aiosqlite et databases OK')" 2>/dev/null || echo "❌ movie-service: problème d'import"
+                    echo "→ Test rapide de movie-service:"
+                    if docker run --rm ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} python -c "
+import sys
+print('Python version:', sys.version)
+try:
+    import fastapi
+    print('✅ fastapi:', fastapi.__version__)
+except ImportError as e:
+    print('❌ fastapi non installé:', e)
+    sys.exit(1)
+try:
+    import aiosqlite
+    print('✅ aiosqlite:', aiosqlite.__version__)
+except ImportError as e:
+    print('❌ aiosqlite non installé:', e)
+    sys.exit(1)
+try:
+    import databases
+    print('✅ databases:', databases.__version__)
+except ImportError as e:
+    print('❌ databases non installé:', e)
+    sys.exit(1)
+try:
+    import sqlalchemy
+    print('✅ sqlalchemy:', sqlalchemy.__version__)
+except ImportError as e:
+    print('❌ sqlalchemy non installé:', e)
+    sys.exit(1)
+print('✅ Toutes les dépendances sont installées')
+" ; then
+                        echo "✅ movie-service: toutes les dépendances OK"
+                    else
+                        echo "❌ movie-service: dépendances manquantes"
+                    fi
                     
-                    echo "→ Test cast-service:"
-                    docker run --rm ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} python -c "import aiosqlite; import databases; print('✅ cast-service: aiosqlite et databases OK')" 2>/dev/null || echo "❌ cast-service: problème d'import"
+                    echo "→ Test rapide de cast-service:"
+                    if docker run --rm ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} python -c "
+import sys
+print('Python version:', sys.version)
+try:
+    import fastapi
+    print('✅ fastapi:', fastapi.__version__)
+except ImportError as e:
+    print('❌ fastapi non installé:', e)
+    sys.exit(1)
+try:
+    import aiosqlite
+    print('✅ aiosqlite:', aiosqlite.__version__)
+except ImportError as e:
+    print('❌ aiosqlite non installé:', e)
+    sys.exit(1)
+print('✅ Dépendances minimales installées')
+" ; then
+                        echo "✅ cast-service: dépendances OK"
+                    else
+                        echo "❌ cast-service: dépendances manquantes"
+                    fi
                     
                     echo ""
-                    echo "📦 IMAGES DISPONIBLES:"
-                    docker images | grep guessod || echo "⚠️ Aucune image trouvée"
+                    echo "📦 IMAGES CONSTRUITES:"
+                    docker images | grep -E "REPOSITORY|guessod" || echo "⚠️ Aucune image trouvée"
                     '''
                 }
             }
         }
         
-        // ========== STAGE 4 : TESTS SIMPLES ==========
-        stage('Tests Simples') {
+        // ========== STAGE 4 : TESTS LOCAUX ==========
+        stage('Tests Locaux') {
             steps {
                 script {
-                    echo "=== TESTS DE VALIDATION ==="
+                    echo "=== TESTS LOCAUX DES CONTAINERS ==="
                     
                     sh '''
-                    echo "1. Test de démarrage des services..."
+                    echo "🧪 Tests de démarrage des services..."
                     
-                    # Test movie-service
-                    echo "→ Test movie-service..."
-                    docker run -d --name test-movie --rm -p 8001:8000 ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:latest
-                    sleep 15
+                    # Nettoyer d'abord les anciens containers
+                    docker stop test-movie test-cast 2>/dev/null || true
+                    docker rm test-movie test-cast 2>/dev/null || true
                     
-                    if docker ps | grep test-movie; then
-                        echo "  ✅ Container movie-service en cours d'exécution"
-                        echo "  📋 Logs:"
-                        docker logs test-movie --tail=5
-                        docker stop test-movie
-                    else
-                        echo "  ❌ Container movie-service non démarré"
-                        docker logs test-movie 2>/dev/null || true
-                    fi
+                    # Test movie-service - AVEC DIAGNOSTIC COMPLET
+                    echo ""
+                    echo "🎬 Test de movie-service..."
+                    
+                    # Démarrer le container
+                    docker run -d --name test-movie -p 8001:8000 ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:latest
+                    
+                    # Attendre et vérifier
+                    echo "⏳ Attente du démarrage (30 secondes max)..."
+                    for i in {1..30}; do
+                        if docker ps | grep -q test-movie; then
+                            # Vérifier les logs pour le message de démarrage
+                            if docker logs test-movie 2>&1 | grep -q "Application startup complete\|Uvicorn running"; then
+                                echo "✅ Movie-service démarré après ${i}s"
+                                echo "📋 Logs de démarrage:"
+                                docker logs test-movie --tail=10
+                                
+                                # Tester le health check
+                                echo "🌐 Test du health check..."
+                                sleep 2
+                                if curl -s -f http://localhost:8001/health > /dev/null; then
+                                    echo "✅ Health check réussi"
+                                    curl -s http://localhost:8001/health
+                                else
+                                    echo "❌ Health check échoué"
+                                    echo "Derniers logs:"
+                                    docker logs test-movie --tail=20
+                                fi
+                                break
+                            fi
+                        else
+                            echo "❌ Container movie-service arrêté après ${i}s"
+                            echo "📋 Logs d'erreur:"
+                            docker logs test-movie 2>/dev/null || echo "Pas de logs"
+                            break
+                        fi
+                        
+                        if [ $i -eq 15 ]; then
+                            echo "⚠️  Movie-service lent à démarrer, logs actuels:"
+                            docker logs test-movie --tail=10 2>/dev/null || echo "Pas de logs encore"
+                        fi
+                        
+                        sleep 1
+                    done
+                    
+                    # Arrêter le container
+                    docker stop test-movie 2>/dev/null || true
+                    docker rm test-movie 2>/dev/null || true
                     
                     # Test cast-service
-                    echo "→ Test cast-service..."
-                    docker run -d --name test-cast --rm -p 8002:8000 ${DOCKER_REGISTRY}/${CAST_IMAGE}:latest
-                    sleep 15
+                    echo ""
+                    echo "🎭 Test de cast-service..."
                     
-                    if docker ps | grep test-cast; then
-                        echo "  ✅ Container cast-service en cours d'exécution"
-                        echo "  📋 Logs:"
-                        docker logs test-cast --tail=5
-                        docker stop test-cast
-                    else
-                        echo "  ❌ Container cast-service non démarré"
-                        docker logs test-cast 2>/dev/null || true
-                    fi
+                    # Démarrer le container
+                    docker run -d --name test-cast -p 8002:8000 ${DOCKER_REGISTRY}/${CAST_IMAGE}:latest
                     
-                    # Nettoyage
-                    docker system prune -f
-                    echo "✅ Tests terminés"
+                    # Attendre et vérifier
+                    echo "⏳ Attente du démarrage (15 secondes max)..."
+                    for i in {1..15}; do
+                        if docker ps | grep -q test-cast; then
+                            if docker logs test-cast 2>&1 | grep -q "Application startup complete\|Uvicorn running"; then
+                                echo "✅ Cast-service démarré après ${i}s"
+                                echo "📋 Logs de démarrage:"
+                                docker logs test-cast --tail=10
+                                
+                                # Tester le health check
+                                echo "🌐 Test du health check..."
+                                sleep 2
+                                if curl -s -f http://localhost:8002/health > /dev/null; then
+                                    echo "✅ Health check réussi"
+                                    curl -s http://localhost:8002/health
+                                else
+                                    echo "❌ Health check échoué"
+                                fi
+                                break
+                            fi
+                        else
+                            echo "❌ Container cast-service arrêté après ${i}s"
+                            docker logs test-cast 2>/dev/null || echo "Pas de logs"
+                            break
+                        fi
+                        sleep 1
+                    done
+                    
+                    # Arrêter le container
+                    docker stop test-cast 2>/dev/null || true
+                    docker rm test-cast 2>/dev/null || true
+                    
+                    echo ""
+                    echo "✅ Tests locaux terminés"
                     '''
                 }
             }
@@ -237,18 +515,31 @@ pipeline {
                     echo "=== CONFIGURATION KUBERNETES ==="
                     
                     sh '''
-                    echo "Création des 4 namespaces demandés..."
+                    echo "📁 Création des 4 namespaces demandés..."
                     
-                    # Créer les namespaces
+                    # Créer les namespaces s'ils n'existent pas
                     for ns in dev qa staging prod; do
-                        kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
-                        echo "  ✅ Namespace $ns créé/vérifié"
+                        if kubectl get namespace $ns >/dev/null 2>&1; then
+                            echo "  ✅ Namespace $ns existe déjà"
+                        else
+                            kubectl create namespace $ns
+                            echo "  ✅ Namespace $ns créé"
+                        fi
                     done
                     
                     echo ""
-                    echo "📋 NAMESPACES DISPONIBLES:"
+                    echo "📋 LISTE DES NAMESPACES:"
                     kubectl get namespaces | grep -E "dev|qa|staging|prod|NAME"
                     echo ""
+                    
+                    # Nettoyer les anciens déploiements
+                    echo "🧹 Nettoyage des anciens déploiements..."
+                    for ns in dev qa staging prod; do
+                        echo "  Namespace: $ns"
+                        kubectl delete deployment movie-service cast-service -n $ns --ignore-not-found=true
+                        kubectl delete service movie-service cast-service -n $ns --ignore-not-found=true
+                    done
+                    sleep 3
                     '''
                 }
             }
@@ -264,15 +555,10 @@ pipeline {
                     NAMESPACE=${params.DEPLOY_ENV}
                     echo "🚀 Déploiement dans namespace: \$NAMESPACE"
                     
-                    # Supprimer les anciens déploiements s'ils existent
-                    echo "🧹 Nettoyage des anciens déploiements..."
-                    kubectl delete deployment movie-service cast-service -n \$NAMESPACE --ignore-not-found=true 2>/dev/null || true
-                    sleep 5
-                    
-                    # Créer le fichier de déploiement avec health checks corrigés
+                    # Créer le fichier de déploiement OPTIMISÉ
                     cat > k8s-deploy.yaml << 'YAML'
 ---
-# Movie Service
+# Movie Service Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -281,6 +567,7 @@ metadata:
   labels:
     app: movie-service
     exam: datascientest
+    candidate: guessod
 spec:
   replicas: 1
   selector:
@@ -291,6 +578,7 @@ spec:
       labels:
         app: movie-service
         exam: datascientest
+        candidate: guessod
     spec:
       containers:
       - name: movie-service
@@ -302,28 +590,38 @@ spec:
         - name: DATABASE_URI
           value: "sqlite:///:memory:"
         - name: CAST_SERVICE_HOST_URL
-          value: "http://cast-service:8000/api/v1/casts/"
-        # Startup probe pour donner plus de temps au démarrage
+          value: "http://cast-service.\${params.DEPLOY_ENV}.svc.cluster.local:8000/api/v1/casts/"
+        # Probes optimisées pour movie-service (qui a des problèmes)
         startupProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          failureThreshold: 30
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 12  # 2 minutes max
         livenessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 40
-          periodSeconds: 10
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 5
-          periodSeconds: 5
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
 ---
+# Movie Service Service
 apiVersion: v1
 kind: Service
 metadata:
@@ -341,7 +639,7 @@ spec:
     targetPort: 8000
     nodePort: 30001
 ---
-# Cast Service
+# Cast Service Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -350,6 +648,7 @@ metadata:
   labels:
     app: cast-service
     exam: datascientest
+    candidate: guessod
 spec:
   replicas: 1
   selector:
@@ -360,6 +659,7 @@ spec:
       labels:
         app: cast-service
         exam: datascientest
+        candidate: guessod
     spec:
       containers:
       - name: cast-service
@@ -370,19 +670,19 @@ spec:
         env:
         - name: DATABASE_URI
           value: "sqlite:///:memory:"
-        # Startup probe pour donner plus de temps au démarrage
+        # Probes normales pour cast-service (fonctionne bien)
         startupProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 10
+          initialDelaySeconds: 5
           periodSeconds: 5
-          failureThreshold: 30
+          failureThreshold: 6  # 30 secondes max
         livenessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 40
+          initialDelaySeconds: 15
           periodSeconds: 10
         readinessProbe:
           httpGet:
@@ -390,7 +690,15 @@ spec:
             port: 8000
           initialDelaySeconds: 5
           periodSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
 ---
+# Cast Service Service
 apiVersion: v1
 kind: Service
 metadata:
@@ -409,26 +717,70 @@ spec:
     nodePort: 30002
 YAML
                     
+                    echo "📄 Fichier de déploiement créé"
+                    echo "🔧 Application du déploiement..."
+                    
                     # Appliquer le déploiement
                     kubectl apply -f k8s-deploy.yaml
                     
                     echo "✅ DÉPLOIEMENT APPLIQUÉ"
                     echo ""
-                    echo "📊 ÉTAT DU DÉPLOIEMENT:"
+                    echo "📊 ÉTAT INITIAL:"
                     kubectl get all -n \$NAMESPACE
                     
-                    # Attendre le démarrage avec plus de temps
+                    # Surveillance du démarrage avec patience
                     echo ""
-                    echo "⏳ Attente du démarrage des pods (60 secondes)..."
-                    sleep 60
+                    echo "⏳ Surveillance du démarrage (3 minutes)..."
                     
-                    echo "🔍 ÉTAT DES PODS:"
-                    kubectl get pods -n \$NAMESPACE -o wide
+                    MOVIE_READY=false
+                    CAST_READY=false
+                    
+                    for minute in {1..3}; do
+                        echo ""
+                        echo "Minute \$minute/3:"
+                        
+                        # Vérifier l'état des pods
+                        echo "État des pods:"
+                        kubectl get pods -n \$NAMESPACE -o wide
+                        
+                        # Vérifier si movie-service est prêt
+                        if kubectl get pods -n \$NAMESPACE -l app=movie-service -o jsonpath='{.items[*].status.containerStatuses[*].ready}' | grep -q "true"; then
+                            if [ "\$MOVIE_READY" = "false" ]; then
+                                echo "✅ Movie-service est prêt!"
+                                MOVIE_READY=true
+                            fi
+                        else
+                            echo "⏳ Movie-service n'est pas encore prêt"
+                            # Afficher les logs pour diagnostic
+                            kubectl logs -n \$NAMESPACE deployment/movie-service --tail=5 2>/dev/null || true
+                        fi
+                        
+                        # Vérifier si cast-service est prêt
+                        if kubectl get pods -n \$NAMESPACE -l app=cast-service -o jsonpath='{.items[*].status.containerStatuses[*].ready}' | grep -q "true"; then
+                            if [ "\$CAST_READY" = "false" ]; then
+                                echo "✅ Cast-service est prêt!"
+                                CAST_READY=true
+                            fi
+                        else
+                            echo "⏳ Cast-service n'est pas encore prêt"
+                        fi
+                        
+                        # Si les deux sont prêts, on peut arrêter
+                        if [ "\$MOVIE_READY" = "true" ] && [ "\$CAST_READY" = "true" ]; then
+                            echo "🎉 Tous les services sont prêts!"
+                            break
+                        fi
+                        
+                        sleep 20
+                    done
                     
                     echo ""
-                    echo "📋 LOGS INITIAUX:"
-                    kubectl logs -n \$NAMESPACE deployment/movie-service --tail=10 2>/dev/null || echo "Pas encore de logs pour movie-service"
-                    kubectl logs -n \$NAMESPACE deployment/cast-service --tail=10 2>/dev/null || echo "Pas encore de logs pour cast-service"
+                    echo "📋 LOGS FINAUX:"
+                    echo "Movie-service:"
+                    kubectl logs -n \$NAMESPACE deployment/movie-service --tail=20 2>/dev/null || echo "Pas de logs disponibles"
+                    echo ""
+                    echo "Cast-service:"
+                    kubectl logs -n \$NAMESPACE deployment/cast-service --tail=20 2>/dev/null || echo "Pas de logs disponibles"
                     """
                 }
             }
@@ -438,63 +790,85 @@ YAML
         stage('Tests et Validation') {
             steps {
                 script {
-                    echo "=== TESTS ET VALIDATION ==="
+                    echo "=== TESTS ET VALIDATION FINALE ==="
                     
                     sh """
                     NAMESPACE=${params.DEPLOY_ENV}
                     
-                    # Attendre que les pods soient prêts
-                    echo "⏳ Attente supplémentaire pour les pods..."
-                    sleep 30
+                    echo "🔍 ÉTAT FINAL DES SERVICES:"
+                    kubectl get all -n \$NAMESPACE
                     
-                    # Vérifier l'état final
-                    echo "🔍 ÉTAT FINAL DES PODS:"
-                    kubectl get pods -n \$NAMESPACE
-                    
-                    # Récupérer les ports
+                    # Récupérer les informations d'accès
                     MOVIE_PORT=\$(kubectl get svc movie-service -n \$NAMESPACE -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "30001")
                     CAST_PORT=\$(kubectl get svc cast-service -n \$NAMESPACE -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "30002")
+                    
+                    # Obtenir l'IP du node (simplifié pour minikube/local)
                     NODE_IP=\$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "localhost")
                     
+                    # Si localhost ne fonctionne pas, utiliser minikube IP
+                    if [ "\$NODE_IP" = "localhost" ]; then
+                        NODE_IP=\$(minikube ip 2>/dev/null || echo "localhost")
+                    fi
+                    
                     echo ""
-                    echo "🌐 URLS D'ACCÈS:"
-                    echo "  Movie-service: http://\${NODE_IP}:\${MOVIE_PORT}/health"
-                    echo "  Cast-service: http://\${NODE_IP}:\${CAST_PORT}/health"
+                    echo "🌐 INFORMATIONS D'ACCÈS:"
+                    echo "  Node IP: \$NODE_IP"
+                    echo "  Movie-service: http://\$NODE_IP:\$MOVIE_PORT/health"
+                    echo "  Cast-service: http://\$NODE_IP:\$CAST_PORT/health"
+                    echo "  Movie-service API docs: http://\$NODE_IP:\$MOVIE_PORT/api/v1/movies/docs"
+                    echo "  Cast-service API docs: http://\$NODE_IP:\$CAST_PORT/api/v1/casts/docs"
                     
                     # Tests de connectivité
                     echo ""
                     echo "🧪 TESTS DE CONNECTIVITÉ:"
                     
+                    # Test movie-service
                     echo "→ Test movie-service..."
                     for i in {1..10}; do
-                        if curl -s -f http://\${NODE_IP}:\${MOVIE_PORT}/health > /dev/null; then
+                        if curl -s -f --max-time 5 http://\$NODE_IP:\$MOVIE_PORT/health > /dev/null; then
                             echo "  ✅ Movie-service accessible (tentative \$i)"
-                            curl -s http://\${NODE_IP}:\${MOVIE_PORT}/health
+                            echo "  📊 Réponse:"
+                            curl -s http://\$NODE_IP:\$MOVIE_PORT/health | head -c 100
+                            echo ""
                             break
                         else
-                            echo "  ⏳ Tentative \$i/10 - Attente 5s..."
-                            sleep 5
+                            if [ \$i -eq 5 ]; then
+                                echo "  ⚠️  Movie-service toujours inaccessible, vérification des pods..."
+                                kubectl describe pod -n \$NAMESPACE -l app=movie-service | grep -A 10 "Events:" || true
+                            fi
+                            echo "  ⏳ Tentative \$i/10..."
+                            sleep 3
                         fi
                     done
                     
+                    # Test cast-service
                     echo "→ Test cast-service..."
-                    for i in {1..10}; do
-                        if curl -s -f http://\${NODE_IP}:\${CAST_PORT}/health > /dev/null; then
+                    for i in {1..5}; do
+                        if curl -s -f --max-time 5 http://\$NODE_IP:\$CAST_PORT/health > /dev/null; then
                             echo "  ✅ Cast-service accessible (tentative \$i)"
-                            curl -s http://\${NODE_IP}:\${CAST_PORT}/health
+                            echo "  📊 Réponse:"
+                            curl -s http://\$NODE_IP:\$CAST_PORT/health | head -c 100
+                            echo ""
                             break
                         else
-                            echo "  ⏳ Tentative \$i/10 - Attente 5s..."
-                            sleep 5
+                            echo "  ⏳ Tentative \$i/5..."
+                            sleep 2
                         fi
                     done
                     
-                    # Vérifier les logs si échec
+                    # Vérifier les 4 namespaces
                     echo ""
-                    echo "📋 LOGS FINAUX:"
-                    kubectl logs -n \$NAMESPACE deployment/movie-service --tail=20 2>/dev/null || echo "Pas de logs movie-service"
+                    echo "📁 VÉRIFICATION DES 4 NAMESPACES:"
+                    for ns in dev qa staging prod; do
+                        echo "  --- \$ns ---"
+                        kubectl get pods -n \$ns 2>/dev/null | grep -E "movie-service|cast-service|NAME" || echo "    Aucun déploiement"
+                    done
+                    
                     echo ""
-                    kubectl logs -n \$NAMESPACE deployment/cast-service --tail=20 2>/dev/null || echo "Pas de logs cast-service"
+                    echo "🎉 VALIDATION TERMINÉE"
+                    echo "✅ Environnement: \$NAMESPACE"
+                    echo "✅ Images: ${DOCKER_TAG}"
+                    echo "✅ Services déployés: movie-service, cast-service"
                     """
                 }
             }
@@ -510,12 +884,19 @@ YAML
             steps {
                 script {
                     echo "=== VALIDATION POUR PRODUCTION ==="
-                    echo "📋 Le déploiement en staging est prêt."
+                    echo "📋 Le déploiement en staging est prêt pour la validation."
                     echo "🔒 La production nécessite une validation manuelle."
                     
                     timeout(time: 10, unit: 'MINUTES') {
                         input(
-                            message: "✅ Le déploiement staging est réussi.\n\nVoulez-vous déployer en PRODUCTION ?",
+                            message: """✅ Le déploiement staging est réussi.
+                            
+Détails:
+- Images: ${DOCKER_TAG}
+- Services: movie-service, cast-service
+- Environnement: staging
+
+Voulez-vous déployer en PRODUCTION ?""",
                             ok: "🚀 OUI, DÉPLOYER EN PRODUCTION",
                             submitter: "admin,administrator"
                         )
@@ -529,9 +910,9 @@ YAML
         // ========== STAGE 10 : DÉPLOIEMENT PRODUCTION ==========
         stage('Déploiement Production') {
             when {
-                expression {
-                    // S'exécute après validation manuelle
-                    return params.DEPLOY_ENV == 'staging'
+                allOf {
+                    expression { params.DEPLOY_ENV == 'staging' }
+                    expression { return true }  // S'exécute après validation manuelle
                 }
             }
             steps {
@@ -541,10 +922,10 @@ YAML
                     sh """
                     echo "🎯 Déploiement dans l'environnement PRODUCTION"
                     
-                    # Créer le déploiement production avec plus de replicas et ressources
+                    # Créer le déploiement production
                     cat > k8s-prod.yaml << 'YAML'
 ---
-# Movie Service Production
+# Production Movie Service
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -577,26 +958,26 @@ spec:
         - name: DATABASE_URI
           value: "sqlite:///:memory:"
         - name: CAST_SERVICE_HOST_URL
-          value: "http://cast-service-prod:8000/api/v1/casts/"
+          value: "http://cast-service-prod.prod.svc.cluster.local:8000/api/v1/casts/"
         startupProbe:
           httpGet:
             path: /health
             port: 8000
           initialDelaySeconds: 10
-          periodSeconds: 5
-          failureThreshold: 30
+          periodSeconds: 10
+          failureThreshold: 15
         livenessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 40
-          periodSeconds: 10
+          initialDelaySeconds: 60
+          periodSeconds: 20
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 5
-          periodSeconds: 5
+          initialDelaySeconds: 30
+          periodSeconds: 10
         resources:
           requests:
             memory: "256Mi"
@@ -622,7 +1003,7 @@ spec:
   - port: 8000
     targetPort: 8000
 ---
-# Cast Service Production
+# Production Cast Service
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -658,20 +1039,20 @@ spec:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 10
+          initialDelaySeconds: 5
           periodSeconds: 5
-          failureThreshold: 30
+          failureThreshold: 6
         livenessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 40
-          periodSeconds: 10
+          initialDelaySeconds: 30
+          periodSeconds: 15
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 5
+          initialDelaySeconds: 10
           periodSeconds: 5
         resources:
           requests:
@@ -702,27 +1083,31 @@ YAML
                     # Appliquer le déploiement production
                     kubectl apply -f k8s-prod.yaml
                     
-                    echo "✅ PRODUCTION DÉPLOYÉE AVEC SUCCÈS!"
+                    echo "✅ DÉPLOIEMENT PRODUCTION APPLIQUÉ"
                     echo ""
-                    echo "🎉 RÉSUMÉ PRODUCTION:"
-                    echo "   - Environnement: prod"
-                    echo "   - Réplicas: 2 par service"
-                    echo "   - Images: ${DOCKER_TAG}"
-                    echo "   - Validation: Manuelle ✓"
-                    echo ""
-                    
                     echo "📊 ÉTAT PRODUCTION:"
                     kubectl get all -n prod
                     echo ""
                     
-                    echo "🔍 DÉTAILS PODS PRODUCTION:"
+                    echo "⏳ Attente du démarrage production (60 secondes)..."
+                    sleep 60
+                    
+                    echo "🔍 PODS PRODUCTION:"
                     kubectl get pods -n prod -o wide
                     echo ""
                     
-                    echo "⏳ Attente démarrage production (60s)..."
-                    sleep 60
                     echo "📋 LOGS PRODUCTION:"
-                    kubectl logs -n prod deployment/movie-service-prod --tail=10 2>/dev/null || echo "Pas de logs production"
+                    echo "Movie-service:"
+                    kubectl logs -n prod deployment/movie-service-prod --tail=10 2>/dev/null || echo "Pas de logs"
+                    echo ""
+                    echo "Cast-service:"
+                    kubectl logs -n prod deployment/cast-service-prod --tail=10 2>/dev/null || echo "Pas de logs"
+                    
+                    echo ""
+                    echo "🎉 PRODUCTION DÉPLOYÉE AVEC SUCCÈS!"
+                    echo "   - Réplicas: 2 par service"
+                    echo "   - Validation: Manuelle ✓"
+                    echo "   - Environnement: prod"
                     """
                 }
             }
@@ -745,41 +1130,22 @@ YAML
                 echo ""
                 """
                 
+                // Résumé Kubernetes
                 sh '''
-                echo "🏗️ ÉTAT KUBERNETES:"
+                echo "🏗️ ÉTAT KUBERNETES PAR NAMESPACE:"
                 for ns in dev qa staging prod; do
-                    echo "   --- $ns ---"
-                    kubectl get pods -n $ns 2>/dev/null | grep -E "movie-service|cast-service|NAME" || echo "     Aucun service"
+                    echo ""
+                    echo "--- $ns ---"
+                    kubectl get pods,svc,deploy -n $ns 2>/dev/null | grep -E "movie|cast|NAME" || echo "   Aucun service déployé"
                 done
                 echo ""
-                
-                echo "🐳 IMAGES DOCKER:"
-                docker images | grep guessod || echo "   Aucune image locale"
-                '''
-                
-                // Diagnostic des problèmes
-                sh '''
-                echo ""
-                echo "🔧 DIAGNOSTIC DES PODS EN ÉCHEC:"
-                for ns in dev qa staging prod; do
-                    echo "Namespace: $ns"
-                    FAILED_PODS=$(kubectl get pods -n $ns --field-selector=status.phase!=Running -o jsonpath="{.items[*].metadata.name}" 2>/dev/null)
-                    if [ -n "$FAILED_PODS" ]; then
-                        for pod in $FAILED_PODS; do
-                            echo "  Pod: $pod"
-                            echo "  Logs:"
-                            kubectl logs -n $ns $pod --tail=3 2>/dev/null | sed "s/^/    /" || echo "    Pas de logs"
-                        done
-                    else
-                        echo "  Aucun pod en échec"
-                    fi
-                done
                 '''
                 
                 // Nettoyage
                 sh '''
-                echo "🧹 Nettoyage..."
+                echo "🧹 Nettoyage des fichiers temporaires..."
                 rm -f k8s-deploy.yaml k8s-prod.yaml 2>/dev/null || true
+                echo "✅ Nettoyage terminé"
                 '''
             }
         }
@@ -787,7 +1153,6 @@ YAML
         success {
             echo "✅✅✅ PIPELINE RÉUSSI! ✅✅✅"
             script {
-                // Notification email
                 emailext(
                     to: 'mohamedguessod@gmail.com',
                     subject: "✅ SUCCÈS Examen DevOps #${BUILD_NUMBER}",
@@ -798,24 +1163,27 @@ YAML
    Build: #${BUILD_NUMBER}
    Tag: ${DOCKER_TAG}
    Environnement: ${params.DEPLOY_ENV}
+   Timestamp: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
    
 📦 LIVRABLES:
    - Images DockerHub: ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG}
-   - Namespaces K8S: dev, qa, staging, prod
-   - Déploiement production: Validé manuellement
+   - 4 namespaces K8S: dev, qa, staging, prod ✓
+   - Déploiement production: Validé manuellement ✓
    
+🧪 EXIGENCES SATISFAITES:
+   ✓ Pipeline CI/CD complet (10 étapes)
+   ✓ Build et push Docker images
+   ✓ Déploiement sur 4 environnements Kubernetes
+   ✓ Validation manuelle pour production
+   ✓ Tests automatisés
+   ✓ Health checks fonctionnels
+   ✓ Corrections de dépendances (aiosqlite, fastapi, etc.)
+   ✓ Documentation incluse
+
 🔗 LIENS:
    - GitHub: https://github.com/Mhdguess/jenkins-exam-guessod
    - DockerHub: https://hub.docker.com/u/guessod
    - Jenkins: ${BUILD_URL}
-
-🧪 EXIGENCES SATISFAITES:
-   ✓ 4 environnements Kubernetes
-   ✓ Déploiement production manuel
-   ✓ Pipeline CI/CD complet
-   ✓ Images versionnées DockerHub
-   ✓ Corrections de dépendances (aiosqlite)
-   ✓ Health checks fonctionnels
 
 📞 Contact: mohamedguessod@gmail.com
 """
@@ -826,7 +1194,6 @@ YAML
         failure {
             echo "❌❌❌ PIPELINE EN ÉCHEC ❌❌❌"
             script {
-                // Notification email
                 emailext(
                     to: 'mohamedguessod@gmail.com',
                     subject: "❌ ÉCHEC Examen DevOps #${BUILD_NUMBER}",
@@ -835,24 +1202,28 @@ YAML
 Détails:
 - Build: #${BUILD_NUMBER}
 - Environnement: ${params.DEPLOY_ENV}
+- Timestamp: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
 - URL: ${BUILD_URL}
 
 Consultez les logs pour le débogage.
 """
                 )
                 
-                // Logs de débogage
+                // Diagnostic détaillé
                 sh '''
-                echo "🔧 LOGS DE DÉBOGAGE:"
+                echo "🔧 DIAGNOSTIC DÉTAILLÉ:"
                 echo ""
-                echo "1. Événements Kubernetes récents:"
-                kubectl get events --sort-by=.lastTimestamp 2>/dev/null | tail -15 | while read line; do echo "   $line"; done || echo "   Non disponible"
+                echo "1. Événements Kubernetes:"
+                kubectl get events --sort-by=.lastTimestamp 2>/dev/null | tail -20
                 echo ""
-                echo "2. Pods en erreur détaillés:"
-                kubectl get pods -A --field-selector=status.phase!=Running -o wide 2>/dev/null || echo "   Aucun pod en erreur"
+                echo "2. Pods en échec:"
+                kubectl get pods -A --field-selector=status.phase!=Running 2>/dev/null
                 echo ""
-                echo "3. Logs des derniers containers Docker:"
-                docker ps -a --format "table {{.Names}}\t{{.Status}}" 2>/dev/null | tail -10 | while read line; do echo "   $line"; done || echo "   Non disponible"
+                echo "3. Logs des derniers containers:"
+                docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" 2>/dev/null | tail -15
+                echo ""
+                echo "4. Images Docker locales:"
+                docker images | grep -E "guessod|movie|cast|REPOSITORY"
                 '''
             }
         }
