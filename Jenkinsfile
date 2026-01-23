@@ -56,8 +56,10 @@ pipeline {
                     ls -la
                     echo ""
                     echo "Vérification des dépendances SQLite..."
-                    grep -i "aiosqlite\|sqlite" movie-service/requirements.txt || echo "⚠️ aiosqlite manquant dans movie-service"
-                    grep -i "aiosqlite\|sqlite" cast-service/requirements.txt || echo "⚠️ aiosqlite manquant dans cast-service"
+                    grep -i "aiosqlite" movie-service/requirements.txt || echo "⚠️ aiosqlite manquant dans movie-service"
+                    grep -i "sqlite" movie-service/requirements.txt || echo "⚠️ sqlite manquant dans movie-service"
+                    grep -i "aiosqlite" cast-service/requirements.txt || echo "⚠️ aiosqlite manquant dans cast-service"
+                    grep -i "sqlite" cast-service/requirements.txt || echo "⚠️ sqlite manquant dans cast-service"
                     '''
                 }
             }
@@ -134,14 +136,10 @@ pipeline {
                     echo "🧪 TEST DES DÉPENDANCES DANS LES IMAGES:"
                     
                     echo "→ Test movie-service:"
-                    docker run --rm ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} \
-                        python -c "import aiosqlite; import databases; print('✅ movie-service: aiosqlite et databases OK')" \
-                        2>/dev/null || echo "❌ movie-service: problème d'import"
+                    docker run --rm ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} python -c "import aiosqlite; import databases; print('✅ movie-service: aiosqlite et databases OK')" 2>/dev/null || echo "❌ movie-service: problème d'import"
                     
                     echo "→ Test cast-service:"
-                    docker run --rm ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} \
-                        python -c "import aiosqlite; import databases; print('✅ cast-service: aiosqlite et databases OK')" \
-                        2>/dev/null || echo "❌ cast-service: problème d'import"
+                    docker run --rm ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} python -c "import aiosqlite; import databases; print('✅ cast-service: aiosqlite et databases OK')" 2>/dev/null || echo "❌ cast-service: problème d'import"
                     
                     echo ""
                     echo "📦 IMAGES DISPONIBLES:"
@@ -751,7 +749,7 @@ YAML
                 echo "🏗️ ÉTAT KUBERNETES:"
                 for ns in dev qa staging prod; do
                     echo "   --- $ns ---"
-                    kubectl get pods -n $ns 2>/dev/null | grep -E "movie|cast|NAME" || echo "     Aucun service"
+                    kubectl get pods -n $ns 2>/dev/null | grep -E "movie-service|cast-service|NAME" || echo "     Aucun service"
                 done
                 echo ""
                 
@@ -765,14 +763,16 @@ YAML
                 echo "🔧 DIAGNOSTIC DES PODS EN ÉCHEC:"
                 for ns in dev qa staging prod; do
                     echo "Namespace: $ns"
-                    kubectl get pods -n $ns --field-selector=status.phase!=Running 2>/dev/null | while read line; do
-                        pod=$(echo $line | awk '{print $1}')
-                        if [ "$pod" != "NAME" ] && [ ! -z "$pod" ]; then
+                    FAILED_PODS=$(kubectl get pods -n $ns --field-selector=status.phase!=Running -o jsonpath="{.items[*].metadata.name}" 2>/dev/null)
+                    if [ -n "$FAILED_PODS" ]; then
+                        for pod in $FAILED_PODS; do
                             echo "  Pod: $pod"
                             echo "  Logs:"
-                            kubectl logs -n $ns $pod --tail=3 2>/dev/null | sed 's/^/    /' || echo "    Pas de logs"
-                        fi
-                    done
+                            kubectl logs -n $ns $pod --tail=3 2>/dev/null | sed "s/^/    /" || echo "    Pas de logs"
+                        done
+                    else
+                        echo "  Aucun pod en échec"
+                    fi
                 done
                 '''
                 
@@ -846,13 +846,13 @@ Consultez les logs pour le débogage.
                 echo "🔧 LOGS DE DÉBOGAGE:"
                 echo ""
                 echo "1. Événements Kubernetes récents:"
-                kubectl get events --sort-by=.lastTimestamp 2>/dev/null | tail -15 | sed 's/^/   /' || echo "   Non disponible"
+                kubectl get events --sort-by=.lastTimestamp 2>/dev/null | tail -15 | while read line; do echo "   $line"; done || echo "   Non disponible"
                 echo ""
                 echo "2. Pods en erreur détaillés:"
                 kubectl get pods -A --field-selector=status.phase!=Running -o wide 2>/dev/null || echo "   Aucun pod en erreur"
                 echo ""
                 echo "3. Logs des derniers containers Docker:"
-                docker ps -a --format "table {{.Names}}\t{{.Status}}" 2>/dev/null | tail -10 | sed 's/^/   /' || echo "   Non disponible"
+                docker ps -a --format "table {{.Names}}\t{{.Status}}" 2>/dev/null | tail -10 | while read line; do echo "   $line"; done || echo "   Non disponible"
                 '''
             }
         }
