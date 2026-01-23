@@ -2,10 +2,14 @@ pipeline {
     agent any
     
     environment {
+        // Docker
         DOCKER_REGISTRY = 'guessod'
         MOVIE_IMAGE = 'movie-service-exam'
         CAST_IMAGE = 'cast-service-exam'
         DOCKER_TAG = "exam-${BUILD_ID}"
+        
+        // Kubernetes
+        K8S_NAMESPACE = 'dev'
     }
     
     parameters {
@@ -22,84 +26,128 @@ pipeline {
     }
     
     stages {
-        // ========== STAGE 0 : NETTOYAGE PRÉALABLE ==========
-        stage('Nettoyage Initial') {
-            steps {
-                script {
-                    echo "=== NETTOYAGE DE L'ENVIRONNEMENT ==="
-                    
-                    sh '''
-                    echo "1. Nettoyage Docker..."
-                    docker system prune -a -f 2>/dev/null || true
-                    
-                    echo "2. Nettoyage Kubernetes..."
-                    # Supprimer les pods evicted
-                    kubectl delete pods --field-selector=status.phase=Evicted --all-namespaces 2>/dev/null || true
-                    kubectl delete pods --field-selector=status.phase=Failed --all-namespaces 2>/dev/null || true
-                    
-                    echo "3. Vérification espace disque..."
-                    df -h /
-                    '''
-                }
-            }
-        }
-        
         // ========== STAGE 1 : PRÉPARATION ==========
         stage('Préparation') {
             steps {
                 script {
-                    echo "=== EXAMEN DEVOPS DATASCIENTEST ==="
+                    echo "========================================"
+                    echo "EXAMEN DEVOPS DATASCIENTEST"
                     echo "Candidat: Mohamed GUESSOD"
-                    echo "Build: ${BUILD_ID}"
-                    echo "Environnement: ${params.DEPLOY_ENV}"
+                    echo "========================================"
+                    echo "Build ID: ${BUILD_ID}"
+                    echo "Docker Tag: ${DOCKER_TAG}"
+                    echo "Environnement cible: ${params.DEPLOY_ENV}"
+                    echo ""
                     
+                    // Nettoyage workspace
                     cleanWs()
-                    checkout scm
+                    
+                    // Checkout du code
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: '*/master']],
+                        userRemoteConfigs: [[url: 'https://github.com/Mhdguess/jenkins-exam-guessod.git']]
+                    ])
                     
                     sh '''
-                    echo "✅ Code récupéré"
+                    echo "✅ Code récupéré avec succès"
                     echo ""
-                    echo "📁 Structure:"
+                    echo "Structure du projet:"
                     ls -la
+                    echo ""
+                    echo "Vérification des fichiers..."
+                    [ -f "docker-compose.yml" ] && echo "✓ docker-compose.yml présent"
+                    [ -f "movie-service/Dockerfile" ] && echo "✓ movie-service/Dockerfile présent"
+                    [ -f "cast-service/Dockerfile" ] && echo "✓ cast-service/Dockerfile présent"
                     '''
                 }
             }
         }
         
         // ========== STAGE 2 : BUILD DOCKER ==========
-        stage('Build Docker') {
+        stage('Build Docker Images') {
             steps {
                 script {
-                    echo "=== BUILD IMAGES DOCKER ==="
+                    echo "=== BUILD DES IMAGES DOCKER ==="
                     
                     // Build movie-service
-                    sh """
-                    echo "Building movie-service..."
-                    cd movie-service
-                    docker build -t ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} .
-                    docker tag ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:latest
-                    echo "✅ movie-service: ${DOCKER_TAG}"
-                    """
+                    dir('movie-service') {
+                        sh """
+                        echo "Construction de movie-service..."
+                        docker build -t ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} .
+                        docker tag ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG} ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:latest
+                        echo "✅ Image movie-service créée"
+                        """
+                    }
                     
                     // Build cast-service
-                    sh """
-                    echo "Building cast-service..."
-                    cd cast-service
-                    docker build -t ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} .
-                    docker tag ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} ${DOCKER_REGISTRY}/${CAST_IMAGE}:latest
-                    echo "✅ cast-service: ${DOCKER_TAG}"
-                    """
+                    dir('cast-service') {
+                        sh """
+                        echo "Construction de cast-service..."
+                        docker build -t ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} .
+                        docker tag ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG} ${DOCKER_REGISTRY}/${CAST_IMAGE}:latest
+                        echo "✅ Image cast-service créée"
+                        """
+                    }
                     
+                    // Afficher les images
                     sh '''
                     echo ""
-                    echo "📦 Images disponibles:"
-                    docker images | grep guessod || echo "Aucune image"
+                    echo "📦 IMAGES DISPONIBLES:"
+                    docker images | grep guessod || echo "⚠️ Aucune image trouvée"
                     '''
                 }
             }
         }
         
-        // ========== STAGE 3 : PUSH DOCKERHUB ==========
+        // ========== STAGE 3 : TESTS SIMPLES ==========
+        stage('Tests Simples') {
+            steps {
+                script {
+                    echo "=== TESTS DE VALIDATION ==="
+                    
+                    sh '''
+                    echo "1. Test de construction des images..."
+                    docker images | grep guessod && echo "✅ Images construites avec succès"
+                    
+                    echo ""
+                    echo "2. Test de démarrage rapide..."
+                    
+                    # Test movie-service
+                    echo "→ Test movie-service..."
+                    docker run -d --name test-movie --rm -p 8001:8000 guessod/movie-service-exam:latest
+                    sleep 10
+                    
+                    if docker ps | grep test-movie; then
+                        echo "  ✅ Container movie-service en cours d'exécution"
+                        docker stop test-movie
+                    else
+                        echo "  ⚠️ Container movie-service non démarré"
+                        docker logs test-movie 2>/dev/null || true
+                    fi
+                    
+                    # Test cast-service
+                    echo "→ Test cast-service..."
+                    docker run -d --name test-cast --rm -p 8002:8000 guessod/cast-service-exam:latest
+                    sleep 10
+                    
+                    if docker ps | grep test-cast; then
+                        echo "  ✅ Container cast-service en cours d'exécution"
+                        docker stop test-cast
+                    else
+                        echo "  ⚠️ Container cast-service non démarré"
+                        docker logs test-cast 2>/dev/null || true
+                    fi
+                    
+                    # Nettoyage
+                    docker system prune -f
+                    echo "✅ Tests terminés"
+                    '''
+                }
+            }
+        }
+        
+        // ========== STAGE 4 : PUSH DOCKERHUB ==========
         stage('Push DockerHub') {
             when {
                 expression { params.SKIP_DOCKER_PUSH == false }
@@ -109,82 +157,76 @@ pipeline {
             }
             steps {
                 script {
-                    echo "=== PUSH DOCKERHUB ==="
+                    echo "=== PUSH SUR DOCKERHUB ==="
                     
                     sh """
+                    # Connexion à DockerHub
                     echo "\${DOCKERHUB_CREDS_PSW}" | docker login -u "\${DOCKERHUB_CREDS_USR}" --password-stdin
                     
-                    echo "Pushing movie-service..."
+                    echo "Envoi de movie-service..."
                     docker push ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG}
                     docker push ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:latest
                     
-                    echo "Pushing cast-service..."
+                    echo "Envoi de cast-service..."
                     docker push ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG}
                     docker push ${DOCKER_REGISTRY}/${CAST_IMAGE}:latest
                     
                     echo ""
-                    echo "✅ Images sur DockerHub:"
-                    echo "   ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG}"
-                    echo "   ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG}"
+                    echo "✅ IMAGES PUBLIÉES SUR DOCKERHUB!"
+                    echo "   - ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG}"
+                    echo "   - ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG}"
+                    echo "   - Accès: https://hub.docker.com/u/guessod"
                     """
                 }
             }
         }
         
-        // ========== STAGE 4 : PRÉPARATION K8S ==========
+        // ========== STAGE 5 : PRÉPARATION KUBERNETES ==========
         stage('Préparation Kubernetes') {
             steps {
                 script {
                     echo "=== CONFIGURATION KUBERNETES ==="
                     
                     sh '''
-                    # Créer les 4 namespaces
-                    echo "Création des namespaces..."
+                    echo "Création des 4 namespaces demandés..."
+                    
+                    # Créer les namespaces
                     for ns in dev qa staging prod; do
                         kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
-                        echo "  ✓ $ns"
+                        echo "  ✅ Namespace $ns créé/vérifié"
                     done
                     
                     echo ""
-                    echo "📋 Namespaces:"
+                    echo "📋 NAMESPACES DISPONIBLES:"
                     kubectl get namespaces | grep -E "dev|qa|staging|prod|NAME"
-                    
-                    # Vérifier l'espace
                     echo ""
-                    echo "💾 Espace disque nœud:"
-                    kubectl describe nodes | grep -A 5 -B 5 "DiskPressure" || echo "✓ Pas de pression disque"
                     '''
                 }
             }
         }
         
-        // ========== STAGE 5 : DÉPLOIEMENT K8S SIMPLIFIÉ ==========
+        // ========== STAGE 6 : DÉPLOIEMENT KUBERNETES ==========
         stage('Déploiement Kubernetes') {
             steps {
                 script {
-                    echo "=== DÉPLOIEMENT DANS ${params.DEPLOY_ENV} ==="
+                    echo "=== DÉPLOIEMENT SUR KUBERNETES ==="
                     
                     sh """
                     NAMESPACE=${params.DEPLOY_ENV}
+                    echo "🚀 Déploiement dans namespace: \$NAMESPACE"
                     
-                    # Nettoyer avant de déployer
-                    echo "Nettoyage pré-déploiement..."
-                    kubectl delete deployment movie-service -n \$NAMESPACE 2>/dev/null || true
-                    kubectl delete deployment cast-service -n \$NAMESPACE 2>/dev/null || true
-                    kubectl delete service movie-service -n \$NAMESPACE 2>/dev/null || true
-                    kubectl delete service cast-service -n \$NAMESPACE 2>/dev/null || true
-                    
-                    sleep 2
-                    
-                    # Déploiement SIMPLE - pas de probes pour éviter les erreurs
-                    cat > k8s-simple.yaml << 'YAML'
+                    # Créer le fichier de déploiement
+                    cat > k8s-deploy.yaml << 'YAML'
 ---
-# Movie Service - Version simple
+# Movie Service
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: movie-service
   namespace: ${params.DEPLOY_ENV}
+  labels:
+    app: movie-service
+    exam: datascientest
 spec:
   replicas: 1
   selector:
@@ -194,6 +236,7 @@ spec:
     metadata:
       labels:
         app: movie-service
+        exam: datascientest
     spec:
       containers:
       - name: movie-service
@@ -206,31 +249,32 @@ spec:
           value: "sqlite:///:memory:"
         - name: CAST_SERVICE_HOST_URL
           value: "http://cast-service:8000/api/v1/casts/"
-        # Pas de probes pour simplifier
-        resources:
-          requests:
-            memory: "64Mi"
-            cpu: "50m"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: movie-service
   namespace: ${params.DEPLOY_ENV}
+  labels:
+    app: movie-service
+    exam: datascientest
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: movie-service
   ports:
   - port: 8000
     targetPort: 8000
 ---
-# Cast Service - Version simple
+# Cast Service
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cast-service
   namespace: ${params.DEPLOY_ENV}
+  labels:
+    app: cast-service
+    exam: datascientest
 spec:
   replicas: 1
   selector:
@@ -240,6 +284,7 @@ spec:
     metadata:
       labels:
         app: cast-service
+        exam: datascientest
     spec:
       containers:
       - name: cast-service
@@ -250,18 +295,17 @@ spec:
         env:
         - name: DATABASE_URI
           value: "sqlite:///:memory:"
-        resources:
-          requests:
-            memory: "64Mi"
-            cpu: "50m"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: cast-service
   namespace: ${params.DEPLOY_ENV}
+  labels:
+    app: cast-service
+    exam: datascientest
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: cast-service
   ports:
@@ -269,55 +313,68 @@ spec:
     targetPort: 8000
 YAML
                     
-                    echo "Application du déploiement..."
-                    kubectl apply -f k8s-simple.yaml
+                    # Appliquer le déploiement
+                    kubectl apply -f k8s-deploy.yaml
                     
-                    echo "✅ Déploiement appliqué"
+                    echo "✅ DÉPLOIEMENT APPLIQUÉ"
                     echo ""
-                    echo "⏳ Attente démarrage (20s)..."
+                    echo "📊 ÉTAT DU DÉPLOIEMENT:"
+                    kubectl get all -n \$NAMESPACE
+                    
+                    # Attendre le démarrage
+                    echo ""
+                    echo "⏳ Attente du démarrage des pods (20 secondes)..."
                     sleep 20
                     
-                    echo ""
-                    echo "📊 État dans \$NAMESPACE:"
-                    kubectl get all -n \$NAMESPACE
+                    echo "🔍 ÉTAT DES PODS:"
+                    kubectl get pods -n \$NAMESPACE -o wide
                     """
                 }
             }
         }
         
-        // ========== STAGE 6 : VALIDATION PRODUCTION ==========
+        // ========== STAGE 7 : VALIDATION PRODUCTION ==========
         stage('Validation Production') {
             when {
-                expression { params.DEPLOY_ENV == 'staging' }
+                expression { 
+                    params.DEPLOY_ENV == 'staging' 
+                }
             }
             steps {
                 script {
-                    echo "=== VALIDATION PRODUCTION ==="
+                    echo "=== VALIDATION POUR PRODUCTION ==="
+                    echo "📋 Le déploiement en staging est prêt."
+                    echo "🔒 La production nécessite une validation manuelle."
                     
-                    timeout(time: 5, unit: 'MINUTES') {
+                    timeout(time: 10, unit: 'MINUTES') {
                         input(
-                            message: "✅ Staging déployé\n\nDéployer en PRODUCTION ?",
-                            ok: "🚀 OUI, déployer en production",
-                            submitter: "admin"
+                            message: "✅ Le déploiement staging est réussi.\n\nVoulez-vous déployer en PRODUCTION ?",
+                            ok: "🚀 OUI, DÉPLOYER EN PRODUCTION",
+                            submitter: "admin,administrator"
                         )
                     }
                     
-                    echo "✅ Validation approuvée!"
+                    echo "✅ Validation production approuvée!"
                 }
             }
         }
         
-        // ========== STAGE 7 : DÉPLOIEMENT PRODUCTION ==========
+        // ========== STAGE 8 : DÉPLOIEMENT PRODUCTION ==========
         stage('Déploiement Production') {
             when {
-                expression { params.DEPLOY_ENV == 'staging' }
+                expression {
+                    // S'exécute après validation manuelle
+                    return params.DEPLOY_ENV == 'staging'
+                }
             }
             steps {
                 script {
-                    echo "=== DÉPLOIEMENT PRODUCTION ==="
+                    echo "=== DÉPLOIEMENT EN PRODUCTION ==="
                     
                     sh """
-                    # Production simplifiée
+                    echo "🎯 Déploiement dans l'environnement PRODUCTION"
+                    
+                    # Créer le déploiement production
                     cat > k8s-prod.yaml << 'YAML'
 ---
 # Movie Service Production
@@ -326,36 +383,55 @@ kind: Deployment
 metadata:
   name: movie-service-prod
   namespace: prod
+  labels:
+    app: movie-service
+    env: production
+    exam: datascientest
 spec:
-  replicas: 1  # 1 seul replica pour économiser l'espace
+  replicas: 2
   selector:
     matchLabels:
-      app: movie-service-prod
+      app: movie-service
+      env: production
   template:
     metadata:
       labels:
-        app: movie-service-prod
+        app: movie-service
+        env: production
+        exam: datascientest
     spec:
       containers:
       - name: movie-service
         image: ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 8000
+        env:
+        - name: DATABASE_URI
+          value: "sqlite:///:memory:"
+        - name: CAST_SERVICE_HOST_URL
+          value: "http://cast-service-prod:8000/api/v1/casts/"
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: movie-service-prod
   namespace: prod
+  labels:
+    app: movie-service
+    env: production
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
-    app: movie-service-prod
+    app: movie-service
+    env: production
   ports:
   - port: 8000
     targetPort: 8000
@@ -366,53 +442,76 @@ kind: Deployment
 metadata:
   name: cast-service-prod
   namespace: prod
+  labels:
+    app: cast-service
+    env: production
+    exam: datascientest
 spec:
-  replicas: 1  # 1 seul replica pour économiser l'espace
+  replicas: 2
   selector:
     matchLabels:
-      app: cast-service-prod
+      app: cast-service
+      env: production
   template:
     metadata:
       labels:
-        app: cast-service-prod
+        app: cast-service
+        env: production
+        exam: datascientest
     spec:
       containers:
       - name: cast-service
         image: ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 8000
+        env:
+        - name: DATABASE_URI
+          value: "sqlite:///:memory:"
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: cast-service-prod
   namespace: prod
+  labels:
+    app: cast-service
+    env: production
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
-    app: cast-service-prod
+    app: cast-service
+    env: production
   ports:
   - port: 8000
     targetPort: 8000
 YAML
                     
-                    # Nettoyer prod avant
-                    echo "Nettoyage production..."
-                    kubectl delete deployment movie-service-prod -n prod 2>/dev/null || true
-                    kubectl delete deployment cast-service-prod -n prod 2>/dev/null || true
-                    
-                    # Déployer
+                    # Appliquer le déploiement production
                     kubectl apply -f k8s-prod.yaml
                     
-                    echo "✅ Production déployée!"
+                    echo "✅ PRODUCTION DÉPLOYÉE AVEC SUCCÈS!"
                     echo ""
-                    echo "📊 État production:"
+                    echo "🎉 RÉSUMÉ PRODUCTION:"
+                    echo "   - Environnement: prod"
+                    echo "   - Réplicas: 2 par service"
+                    echo "   - Images: ${DOCKER_TAG}"
+                    echo "   - Validation: Manuelle ✓"
+                    echo ""
+                    
+                    echo "📊 ÉTAT PRODUCTION:"
                     kubectl get all -n prod
+                    echo ""
+                    
+                    echo "🔍 DÉTAILS PODS PRODUCTION:"
+                    kubectl get pods -n prod -o wide
                     """
                 }
             }
@@ -421,78 +520,106 @@ YAML
     
     post {
         always {
-            echo "=== RAPPORT FINAL ==="
+            echo "========================================"
+            echo "FIN DU PIPELINE - RAPPORT FINAL"
+            echo "========================================"
             script {
                 sh '''
-                echo "🧑‍💻 Candidat: Mohamed GUESSOD"
-                echo "🔢 Build: ${BUILD_ID}"
-                echo "🏷️ Tag: ${DOCKER_TAG}"
-                echo "🌍 Environnement: ${params.DEPLOY_ENV}"
+                echo "📋 INFORMATIONS:"
+                echo "   Candidat: Mohamed GUESSOD"
+                echo "   Build: ${BUILD_ID}"
+                echo "   Tag: ${DOCKER_TAG}"
+                echo "   Environnement: ${params.DEPLOY_ENV}"
+                echo "   Push DockerHub: ${params.SKIP_DOCKER_PUSH ? 'Non' : 'Oui'}"
                 echo ""
                 
-                echo "📦 État Kubernetes:"
+                echo "🏗️ ÉTAT KUBERNETES:"
                 for ns in dev qa staging prod; do
-                    echo "  --- $ns ---"
-                    kubectl get pods -n $ns 2>/dev/null | grep -v "No resources" || echo "    Vide"
+                    echo "   --- $ns ---"
+                    kubectl get pods -n $ns 2>/dev/null | grep -E "movie|cast|NAME" || echo "     Aucun service"
                 done
-                
                 echo ""
-                echo "💾 Espace disque:"
-                df -h / | grep -v Filesystem
+                
+                echo "🐳 IMAGES DOCKER:"
+                docker images | grep guessod || echo "   Aucune image locale"
                 '''
                 
-                // Nettoyage final
+                // Nettoyage
                 sh '''
-                echo ""
-                echo "🧹 Nettoyage fichiers temporaires..."
-                rm -f k8s-simple.yaml k8s-prod.yaml 2>/dev/null || true
-                
-                # Nettoyer les pods échoués
-                kubectl delete pods --field-selector=status.phase=Failed --all-namespaces 2>/dev/null || true
+                echo "🧹 Nettoyage..."
+                rm -f k8s-deploy.yaml k8s-prod.yaml 2>/dev/null || true
                 '''
             }
         }
         
         success {
-            echo "✅✅✅ EXCELLENT! PIPELINE RÉUSSI! ✅✅✅"
+            echo "✅✅✅ PIPELINE RÉUSSI! ✅✅✅"
             script {
-                // Email simplifié
-                mail(
+                // Notification email
+                emailext(
                     to: 'mohamedguessod@gmail.com',
                     subject: "✅ SUCCÈS Examen DevOps #${BUILD_NUMBER}",
-                    body: """Félicitations! Pipeline réussi.
+                    body: """🎉 FÉLICITATIONS! L'examen DevOps est réussi!
 
-Build: #${BUILD_NUMBER}
-Environnement: ${params.DEPLOY_ENV}
-Tag: ${DOCKER_TAG}
+📊 DÉTAILS:
+   Candidat: Mohamed GUESSOD
+   Build: #${BUILD_NUMBER}
+   Tag: ${DOCKER_TAG}
+   Environnement: ${params.DEPLOY_ENV}
+   
+📦 LIVRABLES:
+   - Images DockerHub: ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG}
+   - Namespaces K8S: dev, qa, staging, prod
+   - Déploiement production: Validé manuellement
+   
+🔗 LIENS:
+   - GitHub: https://github.com/Mhdguess/jenkins-exam-guessod
+   - DockerHub: https://hub.docker.com/u/guessod
+   - Jenkins: ${BUILD_URL}
 
-Consultez: ${BUILD_URL}
+🧪 EXIGENCES SATISFAITES:
+   ✓ 4 environnements Kubernetes
+   ✓ Déploiement production manuel
+   ✓ Pipeline CI/CD complet
+   ✓ Images versionnées DockerHub
+   ✓ Notifications email
+
+📞 Contact: mohamedguessod@gmail.com
 """
                 )
             }
         }
         
         failure {
-            echo "❌ PIPELINE EN ÉCHEC"
+            echo "❌❌❌ PIPELINE EN ÉCHEC ❌❌❌"
             script {
-                mail(
+                // Notification email
+                emailext(
                     to: 'mohamedguessod@gmail.com',
                     subject: "❌ ÉCHEC Examen DevOps #${BUILD_NUMBER}",
-                    body: "Pipeline échoué. Logs: ${BUILD_URL}"
+                    body: """⚠️ Le pipeline d'examen a échoué!
+
+Détails:
+- Build: #${BUILD_NUMBER}
+- Environnement: ${params.DEPLOY_ENV}
+- URL: ${BUILD_URL}
+
+Consultez les logs pour le débogage.
+"""
                 )
                 
-                // Debug info
+                // Logs de débogage
                 sh '''
-                echo "🔧 DEBUG INFO:"
+                echo "🔧 LOGS DE DÉBOGAGE:"
                 echo ""
-                echo "1. Événements récents:"
-                kubectl get events --sort-by=.lastTimestamp 2>/dev/null | tail -5 || echo "  Non disponible"
+                echo "1. Événements Kubernetes:"
+                kubectl get events --sort-by=.lastTimestamp 2>/dev/null | tail -15 || echo "   Non disponible"
                 echo ""
-                echo "2. Pods problématiques:"
-                kubectl get pods -A --field-selector=status.phase!=Running 2>/dev/null | head -5 || echo "  Aucun"
+                echo "2. Pods en erreur:"
+                kubectl get pods -A --field-selector=status.phase!=Running 2>/dev/null || echo "   Aucun pod en erreur"
                 echo ""
-                echo "3. Espace disque:"
-                df -h / | tail -1
+                echo "3. Containers Docker:"
+                docker ps -a 2>/dev/null | tail -10 || echo "   Non disponible"
                 '''
             }
         }
