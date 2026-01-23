@@ -694,11 +694,12 @@ YAML
         stage('Déploiement Production') {
             when {
                 expression { 
+                    // CORRECTION ICI : suppression du "return true" invalide
                     // Ne s'exécute QUE si:
-                    // 1. Déploiement production explicitement demandé ET confirmé
-                    // 2. OU validation manuelle depuis staging
+                    // 1. Déploiement production explicitement demandé
+                    // 2. OU déploiement en staging (pour validation manuelle ultérieure)
                     (params.REQUEST_PROD_DEPLOYMENT == true) || 
-                    (params.DEPLOY_ENV == 'staging' && return true)
+                    (params.DEPLOY_ENV == 'staging')
                 }
             }
             steps {
