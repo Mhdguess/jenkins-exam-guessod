@@ -1,7 +1,8 @@
 import os
 
 from sqlalchemy import (Column, DateTime, Integer, MetaData, String, Table,
-                        create_engine, ARRAY)
+                        create_engine)
+from sqlalchemy import JSON
 
 from databases import Database
 
@@ -17,8 +18,8 @@ movies = Table(
     Column('id', Integer, primary_key=True),
     Column('name', String(50)),
     Column('plot', String(250)),
-    Column('genres', ARRAY(String)),
-    Column('casts_id', ARRAY(Integer))
+    Column('genres', JSON),
+    Column('casts_id', JSON)
 )
 
 database = Database(DATABASE_URI)
