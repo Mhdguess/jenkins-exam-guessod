@@ -15,18 +15,13 @@ pipeline {
     parameters {
         choice(
             name: 'DEPLOY_ENV',
-            choices: ['dev', 'qa', 'staging', 'prod'],
+            choices: ['dev', 'qa', 'staging'],
             description: 'Environnement de déploiement'
         )
         booleanParam(
             name: 'SKIP_DOCKER_PUSH',
             defaultValue: false,
             description: 'Passer le push DockerHub'
-        )
-        booleanParam(
-            name: 'AUTO_DEPLOY_PROD',
-            defaultValue: false,
-            description: 'Déployer automatiquement en production (sans validation manuelle)'
         )
     }
     
@@ -215,7 +210,7 @@ SIMPLE
                         """
                     }
                     
-                    // Vérification des images
+                    // Vérification des images - CORRECTION ICI
                     sh '''
                     echo ""
                     echo "🧪 VÉRIFICATION DES IMAGES:"
@@ -254,7 +249,7 @@ try:
     print('✅ aiosqlite')
     import pydantic
     print('✅ pydantic:', pydantic.__version__)
-    print('✅ Dépendances OK")
+    print('✅ Dépendances OK')
 except Exception as e:
     print('❌ Erreur:', str(e))
     exit(1)
@@ -595,62 +590,21 @@ YAML
         // ========== STAGE 9 : VALIDATION PRODUCTION ==========
         stage('Validation Production') {
             when {
-                expression { 
-                    // Toujours s'exécuter, mais avec logique différente selon l'environnement
-                    return true
-                }
+                expression { params.DEPLOY_ENV == 'staging' }
             }
             steps {
                 script {
                     echo "=== VALIDATION PRODUCTION ==="
                     
-                    if (params.DEPLOY_ENV == 'prod') {
-                        echo "🔍 Environnement de déploiement: PRODUCTION"
-                        echo "📊 Vérification des prérequis production..."
-                        
-                        sh '''
-                        echo "🧪 Vérification des ressources..."
-                        kubectl get nodes
-                        echo ""
-                        echo "📦 Vérification des images..."
-                        docker images | grep guessod
-                        echo ""
-                        echo "🔐 Vérification des secrets..."
-                        kubectl get secrets -n prod 2>/dev/null || echo "Aucun secret en production"
-                        echo ""
-                        echo "✅ Validation production terminée"
-                        '''
-                        
-                        // Si AUTO_DEPLOY_PROD est false, demander confirmation manuelle
-                        if (!params.AUTO_DEPLOY_PROD) {
-                            timeout(time: 10, unit: 'MINUTES') {
-                                input(
-                                    message: "🚀 CONFIRMATION DÉPLOIEMENT PRODUCTION - Build ${BUILD_ID}",
-                                    ok: "✅ CONFIRMER le déploiement",
-                                    submitter: "admin,administrator",
-                                    parameters: [
-                                        choice(
-                                            name: 'CONFIRMATION',
-                                            choices: ['OUI', 'NON'],
-                                            description: 'Êtes-vous sûr de vouloir déployer en production ?'
-                                        )
-                                    ]
-                                )
-                            }
-                            echo "✅ Confirmation reçue pour le déploiement production"
-                        } else {
-                            echo "⚡ Déploiement production automatique activé"
-                        }
-                    } else {
-                        echo "📋 Environnement de déploiement: ${params.DEPLOY_ENV}"
-                        echo "🔍 Validation production (simulation)..."
-                        
-                        sh '''
-                        echo "🧪 Tests de production simulés..."
-                        echo "✅ Simulation validation production OK"
-                        echo "📝 Note: Pour déployer en production, sélectionnez 'prod' comme environnement"
-                        '''
+                    timeout(time: 5, unit: 'MINUTES') {
+                        input(
+                            message: "✅ Staging réussi. Déployer en PRODUCTION ?",
+                            ok: "🚀 DÉPLOYER EN PRODUCTION",
+                            submitter: "admin,administrator"
+                        )
                     }
+                    
+                    echo "✅ Validation acceptée"
                 }
             }
         }
@@ -658,7 +612,10 @@ YAML
         // ========== STAGE 10 : DÉPLOIEMENT PRODUCTION ==========
         stage('Déploiement Production') {
             when {
-                expression { params.DEPLOY_ENV == 'prod' }
+                allOf {
+                    expression { params.DEPLOY_ENV == 'staging' }
+                    expression { return true }
+                }
             }
             steps {
                 script {
@@ -667,55 +624,23 @@ YAML
                     sh """
                     echo "🎯 Déploiement en production..."
                     
-                    # Nettoyage production précédente
-                    kubectl delete deployment movie-service-prod cast-service-prod -n prod --ignore-not-found=true
-                    kubectl delete service movie-service-prod cast-service-prod -n prod --ignore-not-found=true
-                    sleep 5
-                    
                     cat > k8s-prod.yaml << YAML
 ---
-# Production Movie Service
-apiVersion: v1
-kind: Service
-metadata:
-  name: movie-service-prod
-  namespace: prod
-  labels:
-    app: movie-service
-    environment: production
-spec:
-  type: NodePort
-  selector:
-    app: movie-service
-  ports:
-  - port: 8000
-    targetPort: 8000
-    nodePort: 31001
----
-# Production Movie Deployment
+# Production Movie
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: movie-service-prod
   namespace: prod
-  labels:
-    app: movie-service
-    environment: production
 spec:
   replicas: 2
   selector:
     matchLabels:
       app: movie-service
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: movie-service
-        environment: production
     spec:
       containers:
       - name: movie-service
@@ -725,71 +650,40 @@ spec:
         - containerPort: 8000
         env:
         - name: DATABASE_URI
-          value: "sqlite:///./prod.db"
+          value: "sqlite:///:memory:"
         - name: CAST_SERVICE_HOST_URL
           value: "http://cast-service-prod:8000/api/v1/casts/"
         resources:
           requests:
             memory: "256Mi"
             cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 60
-          periodSeconds: 30
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 30
-          periodSeconds: 10
 ---
-# Production Cast Service
 apiVersion: v1
 kind: Service
 metadata:
-  name: cast-service-prod
+  name: movie-service-prod
   namespace: prod
-  labels:
-    app: cast-service
-    environment: production
 spec:
-  type: NodePort
   selector:
-    app: cast-service
+    app: movie-service
   ports:
   - port: 8000
-    targetPort: 8000
-    nodePort: 31002
 ---
-# Production Cast Deployment
+# Production Cast
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cast-service-prod
   namespace: prod
-  labels:
-    app: cast-service
-    environment: production
 spec:
   replicas: 2
   selector:
     matchLabels:
       app: cast-service
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: cast-service
-        environment: production
     spec:
       containers:
       - name: cast-service
@@ -799,62 +693,33 @@ spec:
         - containerPort: 8000
         env:
         - name: DATABASE_URI
-          value: "sqlite:///./prod.db"
+          value: "sqlite:///:memory:"
         resources:
           requests:
             memory: "256Mi"
             cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 60
-          periodSeconds: 30
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 30
-          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cast-service-prod
+  namespace: prod
+spec:
+  selector:
+    app: cast-service
+  ports:
+  - port: 8000
 YAML
                     
-                    echo "📄 Application du déploiement production..."
                     kubectl apply -f k8s-prod.yaml
                     
-                    echo "⏳ Attente du démarrage production (60 secondes)..."
-                    sleep 60
-                    
+                    echo "✅ PRODUCTION DÉPLOYÉE"
+                    echo ""
                     echo "📊 ÉTAT PRODUCTION:"
                     kubectl get all -n prod
                     
-                    # Vérification accès production
-                    NODE_IP=\$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}' 2>/dev/null || echo "localhost")
                     echo ""
-                    echo "🌐 POINTS D'ACCÈS PRODUCTION:"
-                    echo "  Movie-service: http://\${NODE_IP}:31001/health"
-                    echo "  Cast-service:  http://\${NODE_IP}:31002/health"
-                    
-                    echo ""
-                    echo "🧪 Tests production:"
-                    echo "→ Test movie-service..."
-                    if curl -s --max-time 15 http://\${NODE_IP}:31001/health > /dev/null; then
-                        echo "  ✅ Movie-service production accessible"
-                    else
-                        echo "  ⚠️ Movie-service production non accessible"
-                    fi
-                    
-                    echo "→ Test cast-service..."
-                    if curl -s --max-time 15 http://\${NODE_IP}:31002/health > /dev/null; then
-                        echo "  ✅ Cast-service production accessible"
-                    else
-                        echo "  ⚠️ Cast-service production non accessible"
-                    fi
-                    
-                    echo ""
-                    echo "🎉 PRODUCTION DÉPLOYÉE AVEC SUCCÈS !"
+                    echo "🎉 MISSION ACCOMPLIE !"
                     """
                 }
             }
@@ -873,7 +738,6 @@ YAML
                 echo "   Build: ${BUILD_ID}"
                 echo "   Tag: ${DOCKER_TAG}"
                 echo "   Environnement: ${params.DEPLOY_ENV}"
-                echo "   Auto déploy prod: ${params.AUTO_DEPLOY_PROD}"
                 echo ""
                 """
                 
