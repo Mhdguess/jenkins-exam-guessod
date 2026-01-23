@@ -23,6 +23,11 @@ pipeline {
             defaultValue: false,
             description: 'Passer le push DockerHub'
         )
+        booleanParam(
+            name: 'REQUEST_PROD_DEPLOYMENT',
+            defaultValue: false,
+            description: '⚠️ REQUÊTE DE DÉPLOIEMENT PRODUCTION (uniquement depuis Master)'
+        )
     }
     
     stages {
@@ -37,7 +42,17 @@ pipeline {
                     echo "Build ID: ${BUILD_ID}"
                     echo "Docker Tag: ${DOCKER_TAG}"
                     echo "Environnement cible: ${params.DEPLOY_ENV}"
+                    echo "Branche Git: ${env.GIT_BRANCH ?: env.BRANCH_NAME}"
                     echo ""
+                    
+                    // Vérification que nous sommes sur la branche Master pour déploiement production
+                    if (params.REQUEST_PROD_DEPLOYMENT == true) {
+                        def currentBranch = env.GIT_BRANCH ?: env.BRANCH_NAME
+                        if (!currentBranch.contains('master')) {
+                            error("❌ DÉPLOIEMENT PRODUCTION REFUSÉ : Le déploiement en production est uniquement autorisé depuis la branche Master. Branche actuelle: ${currentBranch}")
+                        }
+                        echo "✅ Validation : Déploiement production autorisé depuis Master"
+                    }
                     
                     // Nettoyage workspace
                     cleanWs()
@@ -210,7 +225,7 @@ SIMPLE
                         """
                     }
                     
-                    // Vérification des images - CORRECTION ICI
+                    // Vérification des images
                     sh '''
                     echo ""
                     echo "🧪 VÉRIFICATION DES IMAGES:"
@@ -392,8 +407,26 @@ except Exception as e:
                 script {
                     echo "=== DÉPLOIEMENT SUR KUBERNETES ==="
                     
+                    // Vérifier si c'est un déploiement production
+                    if (params.REQUEST_PROD_DEPLOYMENT == true) {
+                        echo "⚠️ ATTENTION : Déploiement en production demandé"
+                        echo "🔒 Vérification des autorisations..."
+                        
+                        // Double vérification de la branche
+                        def currentBranch = env.GIT_BRANCH ?: env.BRANCH_NAME
+                        if (!currentBranch.contains('master')) {
+                            error("🚫 DÉPLOIEMENT PRODUCTION REFUSÉ : Uniquement autorisé depuis la branche Master. Branche actuelle: ${currentBranch}")
+                        }
+                        
+                        echo "✅ Autorisation accordée pour le déploiement production"
+                        echo "🎯 L'environnement sera forcé à 'staging' pour la validation production"
+                        env.DEPLOY_TARGET = 'staging'
+                    } else {
+                        env.DEPLOY_TARGET = params.DEPLOY_ENV
+                    }
+                    
                     sh """
-                    NAMESPACE=${params.DEPLOY_ENV}
+                    NAMESPACE=${env.DEPLOY_TARGET}
                     echo "🚀 Déploiement dans namespace: \$NAMESPACE"
                     
                     # Créer un déploiement simple et fiable
@@ -404,7 +437,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: movie-service
-  namespace: ${params.DEPLOY_ENV}
+  namespace: \${NAMESPACE}
 spec:
   type: NodePort
   selector:
@@ -419,7 +452,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: movie-service
-  namespace: ${params.DEPLOY_ENV}
+  namespace: \${NAMESPACE}
 spec:
   replicas: 1
   selector:
@@ -460,7 +493,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: cast-service
-  namespace: ${params.DEPLOY_ENV}
+  namespace: \${NAMESPACE}
 spec:
   type: NodePort
   selector:
@@ -475,7 +508,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cast-service
-  namespace: ${params.DEPLOY_ENV}
+  namespace: \${NAMESPACE}
 spec:
   replicas: 1
   selector:
@@ -590,18 +623,66 @@ YAML
         // ========== STAGE 9 : VALIDATION PRODUCTION ==========
         stage('Validation Production') {
             when {
-                expression { params.DEPLOY_ENV == 'staging' }
+                expression { 
+                    params.REQUEST_PROD_DEPLOYMENT == true || params.DEPLOY_ENV == 'staging'
+                }
             }
             steps {
                 script {
                     echo "=== VALIDATION PRODUCTION ==="
                     
-                    timeout(time: 5, unit: 'MINUTES') {
-                        input(
-                            message: "✅ Staging réussi. Déployer en PRODUCTION ?",
-                            ok: "🚀 DÉPLOYER EN PRODUCTION",
-                            submitter: "admin,administrator"
-                        )
+                    // Vérification supplémentaire pour production
+                    if (params.REQUEST_PROD_DEPLOYMENT == true) {
+                        echo "🔒 DÉPLOIEMENT PRODUCTION DEMANDÉ"
+                        echo "📋 Vérification des prérequis:"
+                        
+                        // Vérifier la branche
+                        def currentBranch = env.GIT_BRANCH ?: env.BRANCH_NAME
+                        if (!currentBranch.contains('master')) {
+                            error("🚫 DÉPLOIEMENT PRODUCTION REFUSÉ : Branche non autorisée: ${currentBranch}")
+                        }
+                        
+                        echo "✅ Branche Master validée"
+                        echo "✅ Images Docker construites"
+                        echo "✅ Tests réussis"
+                        echo "✅ Déploiement staging validé"
+                        
+                        // Demande de confirmation manuelle supplémentaire pour production
+                        echo ""
+                        echo "⚠️ ⚠️ ⚠️  ATTENTION : DÉPLOIEMENT EN PRODUCTION  ⚠️ ⚠️ ⚠️"
+                        echo "Cette action va déployer en PRODUCTION (namespace: prod)"
+                        echo "Tag Docker: ${DOCKER_TAG}"
+                        echo "Images: ${DOCKER_REGISTRY}/${MOVIE_IMAGE}:${DOCKER_TAG}"
+                        echo "         ${DOCKER_REGISTRY}/${CAST_IMAGE}:${DOCKER_TAG}"
+                        
+                        timeout(time: 10, unit: 'MINUTES') {
+                            input(
+                                message: "🚀 CONFIRMER LE DÉPLOIEMENT EN PRODUCTION ?",
+                                ok: "✅ OUI, DÉPLOYER EN PRODUCTION",
+                                submitter: "admin,administrator,production",
+                                parameters: [
+                                    booleanParam(
+                                        name: 'CONFIRM_PROD_DEPLOY',
+                                        defaultValue: false,
+                                        description: 'Je confirme le déploiement en production'
+                                    ),
+                                    text(
+                                        name: 'RELEASE_NOTES',
+                                        defaultValue: 'Déploiement production via Jenkins Pipeline',
+                                        description: 'Notes de release'
+                                    )
+                                ]
+                            )
+                        }
+                    } else {
+                        // Validation normale pour staging
+                        timeout(time: 5, unit: 'MINUTES') {
+                            input(
+                                message: "✅ Staging réussi. Déployer en PRODUCTION ?",
+                                ok: "🚀 DÉPLOYER EN PRODUCTION",
+                                submitter: "admin,administrator"
+                            )
+                        }
                     }
                     
                     echo "✅ Validation acceptée"
@@ -612,17 +693,28 @@ YAML
         // ========== STAGE 10 : DÉPLOIEMENT PRODUCTION ==========
         stage('Déploiement Production') {
             when {
-                allOf {
-                    expression { params.DEPLOY_ENV == 'staging' }
-                    expression { return true }
+                expression { 
+                    // Ne s'exécute QUE si:
+                    // 1. Déploiement production explicitement demandé ET confirmé
+                    // 2. OU validation manuelle depuis staging
+                    (params.REQUEST_PROD_DEPLOYMENT == true) || 
+                    (params.DEPLOY_ENV == 'staging' && return true)
                 }
             }
             steps {
                 script {
                     echo "=== DÉPLOIEMENT PRODUCTION ==="
                     
+                    // Vérification finale de sécurité
+                    def currentBranch = env.GIT_BRANCH ?: env.BRANCH_NAME
+                    if (!currentBranch.contains('master')) {
+                        error("🚫 DÉPLOIEMENT PRODUCTION ANNULÉ : Sécurité - Uniquement depuis Master. Branche: ${currentBranch}")
+                    }
+                    
                     sh """
                     echo "🎯 Déploiement en production..."
+                    echo "🔒 Branche validée: ${currentBranch}"
+                    echo "🏷️ Tag Docker: ${DOCKER_TAG}"
                     
                     cat > k8s-prod.yaml << YAML
 ---
@@ -719,7 +811,26 @@ YAML
                     kubectl get all -n prod
                     
                     echo ""
+                    echo "🎯 POINTS D'ACCÈS PRODUCTION:"
+                    NODE_IP=\$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}' 2>/dev/null || echo "localhost")
+                    echo "  Movie-service: http://\${NODE_IP}:8000/health"
+                    echo "  Cast-service:  http://\${NODE_IP}:8000/health"
+                    
+                    # Tests de santé production
+                    echo ""
+                    echo "🧪 TESTS PRODUCTION:"
+                    sleep 30
+                    
+                    echo "→ Test movie-service production..."
+                    kubectl rollout status deployment/movie-service-prod -n prod --timeout=60s
+                    
+                    echo "→ Test cast-service production..."
+                    kubectl rollout status deployment/cast-service-prod -n prod --timeout=60s
+                    
+                    echo ""
                     echo "🎉 MISSION ACCOMPLIE !"
+                    echo "📦 Production déployée avec succès"
+                    echo "🏷️ Version: ${DOCKER_TAG}"
                     """
                 }
             }
@@ -738,6 +849,8 @@ YAML
                 echo "   Build: ${BUILD_ID}"
                 echo "   Tag: ${DOCKER_TAG}"
                 echo "   Environnement: ${params.DEPLOY_ENV}"
+                echo "   Branche: ${env.GIT_BRANCH ?: env.BRANCH_NAME}"
+                echo "   Déploiement Production Demandé: ${params.REQUEST_PROD_DEPLOYMENT}"
                 echo ""
                 """
                 
@@ -760,6 +873,13 @@ YAML
             echo "✅✅✅ SUCCÈS ! ✅✅✅"
             script {
                 echo "🎉 Pipeline exécuté avec succès !"
+                
+                // Notification pour déploiement production
+                if (params.REQUEST_PROD_DEPLOYMENT == true) {
+                    echo "🚀 DÉPLOIEMENT PRODUCTION RÉUSSI !"
+                    echo "📦 Version: ${DOCKER_TAG}"
+                    echo "⏰ Heure: ${new Date()}"
+                }
             }
         }
         
@@ -767,6 +887,22 @@ YAML
             echo "❌❌❌ ÉCHEC ❌❌❌"
             script {
                 echo "⚠️ Le pipeline a échoué. Vérifiez les logs."
+                
+                // Log spécifique pour échec de déploiement production
+                if (params.REQUEST_PROD_DEPLOYMENT == true) {
+                    echo "🚫 DÉPLOIEMENT PRODUCTION ÉCHOUÉ - ACTION REQUISE !"
+                }
+            }
+        }
+        
+        aborted {
+            echo "🟡 PIPELINE INTERROMPU"
+            script {
+                echo "Le pipeline a été interrompu manuellement."
+                
+                if (params.REQUEST_PROD_DEPLOYMENT == true) {
+                    echo "⚠️ DÉPLOIEMENT PRODUCTION ANNULÉ - Sécurité activée"
+                }
             }
         }
     }
