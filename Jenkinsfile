@@ -425,9 +425,41 @@ except Exception as e:
                         env.DEPLOY_TARGET = params.DEPLOY_ENV
                     }
                     
+                    // Déterminer les ports NodePort en fonction de l'environnement
+                    def nodePortMapping = [
+                        'dev': [movie: 30001, cast: 30002],
+                        'qa': [movie: 30011, cast: 30012],
+                        'staging': [movie: 30021, cast: 30022],
+                        'prod': [movie: 31001, cast: 31002]
+                    ]
+                    
+                    def moviePort = nodePortMapping[env.DEPLOY_TARGET]?.movie ?: 30001
+                    def castPort = nodePortMapping[env.DEPLOY_TARGET]?.cast ?: 30002
+                    
                     sh """
                     NAMESPACE=${env.DEPLOY_TARGET}
+                    MOVIE_PORT=${moviePort}
+                    CAST_PORT=${castPort}
+                    
                     echo "🚀 Déploiement dans namespace: \$NAMESPACE"
+                    echo "📡 Ports NodePort: Movie=\$MOVIE_PORT, Cast=\$CAST_PORT"
+                    
+                    # Vérifier si les ports sont déjà utilisés
+                    echo "🔍 Vérification des ports..."
+                    CURRENT_MOVIE_PORT=\$(kubectl get svc movie-service -n \$NAMESPACE -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "")
+                    CURRENT_CAST_PORT=\$(kubectl get svc cast-service -n \$NAMESPACE -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "")
+                    
+                    if [ -n "\$CURRENT_MOVIE_PORT" ] && [ "\$CURRENT_MOVIE_PORT" != "\$MOVIE_PORT" ]; then
+                        echo "⚠️ Movie-service utilise déjà le port \$CURRENT_MOVIE_PORT, suppression du service..."
+                        kubectl delete svc movie-service -n \$NAMESPACE --ignore-not-found=true
+                        sleep 2
+                    fi
+                    
+                    if [ -n "\$CURRENT_CAST_PORT" ] && [ "\$CURRENT_CAST_PORT" != "\$CAST_PORT" ]; then
+                        echo "⚠️ Cast-service utilise déjà le port \$CURRENT_CAST_PORT, suppression du service..."
+                        kubectl delete svc cast-service -n \$NAMESPACE --ignore-not-found=true
+                        sleep 2
+                    fi
                     
                     # Créer un déploiement simple et fiable
                     cat > k8s-deploy.yaml << YAML
@@ -445,7 +477,7 @@ spec:
   ports:
   - port: 8000
     targetPort: 8000
-    nodePort: 30001
+    nodePort: \${MOVIE_PORT}
 ---
 # Deployment Movie
 apiVersion: apps/v1
@@ -473,7 +505,7 @@ spec:
         - name: DATABASE_URI
           value: "sqlite:///:memory:"
         - name: CAST_SERVICE_HOST_URL
-          value: "http://cast-service:8000/api/v1/casts/"
+          value: "http://cast-service.\${NAMESPACE}.svc.cluster.local:8000/api/v1/casts/"
         # Probes très simples
         livenessProbe:
           httpGet:
@@ -501,7 +533,7 @@ spec:
   ports:
   - port: 8000
     targetPort: 8000
-    nodePort: 30002
+    nodePort: \${CAST_PORT}
 ---
 # Deployment Cast
 apiVersion: apps/v1
@@ -572,15 +604,26 @@ YAML
                 script {
                     echo "=== VALIDATION FINALE ==="
                     
+                    // Déterminer les ports NodePort en fonction de l'environnement
+                    def nodePortMapping = [
+                        'dev': [movie: 30001, cast: 30002],
+                        'qa': [movie: 30011, cast: 30012],
+                        'staging': [movie: 30021, cast: 30022],
+                        'prod': [movie: 31001, cast: 31002]
+                    ]
+                    
+                    def moviePort = nodePortMapping[params.DEPLOY_ENV]?.movie ?: 30001
+                    def castPort = nodePortMapping[params.DEPLOY_ENV]?.cast ?: 30002
+                    
                     sh """
                     NAMESPACE=${params.DEPLOY_ENV}
+                    MOVIE_PORT=${moviePort}
+                    CAST_PORT=${castPort}
                     
                     echo "🔍 ÉTAT FINAL:"
                     kubectl get pods,svc -n \$NAMESPACE
                     
                     # Informations d'accès
-                    MOVIE_PORT=30001
-                    CAST_PORT=30002
                     NODE_IP=\$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}' 2>/dev/null || echo "localhost")
                     
                     echo ""
@@ -694,7 +737,6 @@ YAML
         stage('Déploiement Production') {
             when {
                 expression { 
-                    // CORRECTION ICI : suppression du "return true" invalide
                     // Ne s'exécute QUE si:
                     // 1. Déploiement production explicitement demandé
                     // 2. OU déploiement en staging (pour validation manuelle ultérieure)
@@ -723,7 +765,7 @@ YAML
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: movie-service-prod
+  name: movie-service
   namespace: prod
 spec:
   replicas: 2
@@ -745,7 +787,7 @@ spec:
         - name: DATABASE_URI
           value: "sqlite:///:memory:"
         - name: CAST_SERVICE_HOST_URL
-          value: "http://cast-service-prod:8000/api/v1/casts/"
+          value: "http://cast-service.prod.svc.cluster.local:8000/api/v1/casts/"
         resources:
           requests:
             memory: "256Mi"
@@ -754,19 +796,22 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: movie-service-prod
+  name: movie-service
   namespace: prod
 spec:
+  type: NodePort
   selector:
     app: movie-service
   ports:
   - port: 8000
+    targetPort: 8000
+    nodePort: 31001
 ---
 # Production Cast
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cast-service-prod
+  name: cast-service
   namespace: prod
 spec:
   replicas: 2
@@ -795,13 +840,16 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: cast-service-prod
+  name: cast-service
   namespace: prod
 spec:
+  type: NodePort
   selector:
     app: cast-service
   ports:
   - port: 8000
+    targetPort: 8000
+    nodePort: 31002
 YAML
                     
                     kubectl apply -f k8s-prod.yaml
@@ -814,8 +862,8 @@ YAML
                     echo ""
                     echo "🎯 POINTS D'ACCÈS PRODUCTION:"
                     NODE_IP=\$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}' 2>/dev/null || echo "localhost")
-                    echo "  Movie-service: http://\${NODE_IP}:8000/health"
-                    echo "  Cast-service:  http://\${NODE_IP}:8000/health"
+                    echo "  Movie-service: http://\${NODE_IP}:31001/health"
+                    echo "  Cast-service:  http://\${NODE_IP}:31002/health"
                     
                     # Tests de santé production
                     echo ""
@@ -823,10 +871,10 @@ YAML
                     sleep 30
                     
                     echo "→ Test movie-service production..."
-                    kubectl rollout status deployment/movie-service-prod -n prod --timeout=60s
+                    kubectl rollout status deployment/movie-service -n prod --timeout=60s
                     
                     echo "→ Test cast-service production..."
-                    kubectl rollout status deployment/cast-service-prod -n prod --timeout=60s
+                    kubectl rollout status deployment/cast-service -n prod --timeout=60s
                     
                     echo ""
                     echo "🎉 MISSION ACCOMPLIE !"
