@@ -105,7 +105,7 @@ pipeline {
                     else
                         echo "  ❌ movie-service/requirements.txt non trouvé!"
                         echo "  🛠️  Création avec toutes les dépendances nécessaires..."
-                        cat > movie-service/requirements.txt << 'REQS'
+                        cat > movie-service/requirements.txt << REQS
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 aiosqlite==0.19.0
@@ -152,7 +152,7 @@ REQS
                     else
                         echo "  ❌ cast-service/requirements.txt non trouvé!"
                         echo "  🛠️  Création avec toutes les dépendances nécessaires..."
-                        cat > cast-service/requirements.txt << 'REQS'
+                        cat > cast-service/requirements.txt << REQS
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 aiosqlite==0.19.0
@@ -184,7 +184,7 @@ REQS
                     else
                         echo "❌ Dockerfile manquant dans movie-service"
                         echo "  🛠️  Création du Dockerfile..."
-                        cat > movie-service/Dockerfile << 'DOCKERFILE'
+                        cat > movie-service/Dockerfile << DOCKERFILE
 FROM python:3.9-slim
 
 WORKDIR /app
@@ -214,7 +214,7 @@ DOCKERFILE
                     else
                         echo "❌ Dockerfile manquant dans cast-service"
                         echo "  🛠️  Création du Dockerfile..."
-                        cat > cast-service/Dockerfile << 'DOCKERFILE'
+                        cat > cast-service/Dockerfile << DOCKERFILE
 FROM python:3.9-slim
 
 WORKDIR /app
@@ -388,10 +388,12 @@ print('✅ Dépendances minimales installées')
                     
                     # Attendre et vérifier
                     echo "⏳ Attente du démarrage (30 secondes max)..."
+                    MOVIE_STARTED=false
                     for i in {1..30}; do
                         if docker ps | grep -q test-movie; then
                             # Vérifier les logs pour le message de démarrage
-                            if docker logs test-movie 2>&1 | grep -q "Application startup complete\|Uvicorn running"; then
+                            MOVIE_LOGS=$(docker logs test-movie 2>&1)
+                            if echo "$MOVIE_LOGS" | grep -q "Application startup complete" || echo "$MOVIE_LOGS" | grep -q "Uvicorn running"; then
                                 echo "✅ Movie-service démarré après ${i}s"
                                 echo "📋 Logs de démarrage:"
                                 docker logs test-movie --tail=10
@@ -402,6 +404,7 @@ print('✅ Dépendances minimales installées')
                                 if curl -s -f http://localhost:8001/health > /dev/null; then
                                     echo "✅ Health check réussi"
                                     curl -s http://localhost:8001/health
+                                    MOVIE_STARTED=true
                                 else
                                     echo "❌ Health check échoué"
                                     echo "Derniers logs:"
@@ -437,9 +440,11 @@ print('✅ Dépendances minimales installées')
                     
                     # Attendre et vérifier
                     echo "⏳ Attente du démarrage (15 secondes max)..."
+                    CAST_STARTED=false
                     for i in {1..15}; do
                         if docker ps | grep -q test-cast; then
-                            if docker logs test-cast 2>&1 | grep -q "Application startup complete\|Uvicorn running"; then
+                            CAST_LOGS=$(docker logs test-cast 2>&1)
+                            if echo "$CAST_LOGS" | grep -q "Application startup complete" || echo "$CAST_LOGS" | grep -q "Uvicorn running"; then
                                 echo "✅ Cast-service démarré après ${i}s"
                                 echo "📋 Logs de démarrage:"
                                 docker logs test-cast --tail=10
@@ -450,6 +455,7 @@ print('✅ Dépendances minimales installées')
                                 if curl -s -f http://localhost:8002/health > /dev/null; then
                                     echo "✅ Health check réussi"
                                     curl -s http://localhost:8002/health
+                                    CAST_STARTED=true
                                 else
                                     echo "❌ Health check échoué"
                                 fi
@@ -467,6 +473,10 @@ print('✅ Dépendances minimales installées')
                     docker stop test-cast 2>/dev/null || true
                     docker rm test-cast 2>/dev/null || true
                     
+                    echo ""
+                    echo "📊 RÉSUMÉ DES TESTS:"
+                    echo "  Movie-service: $([ "$MOVIE_STARTED" = true ] && echo "✅ Démarré" || echo "❌ Échec")"
+                    echo "  Cast-service: $([ "$CAST_STARTED" = true ] && echo "✅ Démarré" || echo "❌ Échec")"
                     echo ""
                     echo "✅ Tests locaux terminés"
                     '''
@@ -556,7 +566,7 @@ print('✅ Dépendances minimales installées')
                     echo "🚀 Déploiement dans namespace: \$NAMESPACE"
                     
                     # Créer le fichier de déploiement OPTIMISÉ
-                    cat > k8s-deploy.yaml << 'YAML'
+                    cat > k8s-deploy.yaml << YAML
 ---
 # Movie Service Deployment
 apiVersion: apps/v1
@@ -824,12 +834,14 @@ YAML
                     
                     # Test movie-service
                     echo "→ Test movie-service..."
+                    MOVIE_ACCESS=false
                     for i in {1..10}; do
                         if curl -s -f --max-time 5 http://\$NODE_IP:\$MOVIE_PORT/health > /dev/null; then
                             echo "  ✅ Movie-service accessible (tentative \$i)"
                             echo "  📊 Réponse:"
                             curl -s http://\$NODE_IP:\$MOVIE_PORT/health | head -c 100
                             echo ""
+                            MOVIE_ACCESS=true
                             break
                         else
                             if [ \$i -eq 5 ]; then
@@ -843,12 +855,14 @@ YAML
                     
                     # Test cast-service
                     echo "→ Test cast-service..."
+                    CAST_ACCESS=false
                     for i in {1..5}; do
                         if curl -s -f --max-time 5 http://\$NODE_IP:\$CAST_PORT/health > /dev/null; then
                             echo "  ✅ Cast-service accessible (tentative \$i)"
                             echo "  📊 Réponse:"
                             curl -s http://\$NODE_IP:\$CAST_PORT/health | head -c 100
                             echo ""
+                            CAST_ACCESS=true
                             break
                         else
                             echo "  ⏳ Tentative \$i/5..."
@@ -869,6 +883,8 @@ YAML
                     echo "✅ Environnement: \$NAMESPACE"
                     echo "✅ Images: ${DOCKER_TAG}"
                     echo "✅ Services déployés: movie-service, cast-service"
+                    echo "✅ Movie-service accessible: \$MOVIE_ACCESS"
+                    echo "✅ Cast-service accessible: \$CAST_ACCESS"
                     """
                 }
             }
@@ -923,7 +939,7 @@ Voulez-vous déployer en PRODUCTION ?""",
                     echo "🎯 Déploiement dans l'environnement PRODUCTION"
                     
                     # Créer le déploiement production
-                    cat > k8s-prod.yaml << 'YAML'
+                    cat > k8s-prod.yaml << YAML
 ---
 # Production Movie Service
 apiVersion: apps/v1
